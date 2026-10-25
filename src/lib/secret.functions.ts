@@ -1,12 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader } from '@tanstack/react-start/server'
-import { getUser } from '@netlify/identity'
 import { desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
 import { secretMessages } from '../../db/schema'
-import { isAdminEmail } from './admin-emails'
+import { getAdminEmail } from './admin-session'
 
 // The app a link was opened from: in-app browsers add their name to the user agent
 function sourceFromUserAgent(ua: string) {
@@ -39,15 +38,12 @@ export const sendSecretMessage = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
-async function requireAdmin() {
-  const user = await getUser()
-  if (!user || !((user.roles ?? []).includes('admin') || isAdminEmail(user.email))) {
-    throw new Error('ما عندكش الحق تشوف الصفحة هذي')
-  }
+function requireAdmin() {
+  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
 }
 
 export const getSecretMessages = createServerFn({ method: 'GET' }).handler(async () => {
-  await requireAdmin()
+  requireAdmin()
   const rows = await db
     .select()
     .from(secretMessages)
@@ -64,7 +60,7 @@ export const getSecretMessages = createServerFn({ method: 'GET' }).handler(async
 })
 
 export const markSecretMessagesRead = createServerFn({ method: 'POST' }).handler(async () => {
-  await requireAdmin()
+  requireAdmin()
   await db.update(secretMessages).set({ readAt: new Date() }).where(isNull(secretMessages.readAt))
   return { ok: true }
 })
@@ -72,7 +68,7 @@ export const markSecretMessagesRead = createServerFn({ method: 'POST' }).handler
 export const deleteSecretMessage = createServerFn({ method: 'POST' })
   .validator(z.object({ id: z.number().int().positive() }))
   .handler(async ({ data }) => {
-    await requireAdmin()
+    requireAdmin()
     await db.delete(secretMessages).where(eq(secretMessages.id, data.id))
     return { ok: true }
   })
