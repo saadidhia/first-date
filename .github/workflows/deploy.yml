@@ -50,7 +50,7 @@ jobs:
         run: |
           ssh root@91.98.119.218 'set -e
             cd /opt/firstdate
-            npm install -g pnpm@11.2.2
+            npm install -g pnpm@11.2.2 --force
             pnpm install --frozen-lockfile
             set -a; . ./.env; set +a
             pnpm db:migrate
