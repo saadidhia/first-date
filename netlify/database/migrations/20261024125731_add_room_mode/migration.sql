@@ -1,0 +1,1 @@
+ALTER TABLE "rooms" ADD COLUMN "mode" text DEFAULT 'date' NOT NULL;
