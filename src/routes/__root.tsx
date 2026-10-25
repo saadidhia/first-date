@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 
 import { Toaster } from '@/components/ui/sonner'
@@ -69,22 +68,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <IdentityLinkForwarder />
         <TooltipProvider>{children}</TooltipProvider>
         <Toaster position="top-center" richColors />
         <Scripts />
       </body>
     </html>
   )
-}
-
-// Identity emails (admin invite, password reset) link to the site root; the admin page handles them
-function IdentityLinkForwarder() {
-  useEffect(() => {
-    const { pathname, hash } = window.location
-    if (pathname !== '/admin' && /(invite|recovery|confirmation)_token=/.test(hash)) {
-      window.location.replace(`/admin${hash}`)
-    }
-  }, [])
-  return null
 }

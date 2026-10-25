@@ -1,31 +1,33 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getUser } from '@netlify/identity'
 import { desc, eq, gt, sql } from 'drizzle-orm'
+import { z } from 'zod'
 
 import { db } from '../../db'
 import { players, rooms } from '../../db/schema'
-import { isAdminEmail } from './admin-emails'
+import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 
 // A player counts as "using the site now" if their room polled within this window
 const ACTIVE_MS = 20_000
 const HOUR_MS = 60 * 60 * 1000
 
-type IdentityUser = NonNullable<Awaited<ReturnType<typeof getUser>>>
-
-// getUser() verifies the session cookie, so the email and roles here come from the signed token
-const isAdmin = (user: IdentityUser) =>
-  (user.roles ?? []).includes('admin') || isAdminEmail(user.email)
-
-/** Who the signed-in Identity user is, and whether they are an admin. */
+/** The signed-in admin, or null. */
 export const getAdminUser = createServerFn({ method: 'GET' }).handler(async () => {
-  const user = await getUser()
-  if (!user) return null
-  return { email: user.email ?? '', isAdmin: isAdmin(user) }
+  const email = getAdminEmail()
+  return email ? { email, isAdmin: true } : null
+})
+
+export const loginAdmin = createServerFn({ method: 'POST' })
+  .validator(z.object({ email: z.string().max(200), password: z.string().max(200) }))
+  .handler(async ({ data }) => {
+    if (!adminLogin(data.email, data.password)) throw new Error('invalid credentials')
+  })
+
+export const logoutAdmin = createServerFn({ method: 'POST' }).handler(async () => {
+  adminLogout()
 })
 
 export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () => {
-  const user = await getUser()
-  if (!user || !isAdmin(user)) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
 
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(players)
   const [{ active }] = await db

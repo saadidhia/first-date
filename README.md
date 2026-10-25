@@ -13,16 +13,27 @@ A two-player "first date" game in Tunisian Arabic. One person creates a room and
 
 ## Tech
 
-- TanStack Start (React 19) + Tailwind CSS 4, deployed on Netlify
-- Netlify Database (Postgres) via Drizzle ORM, for rooms, players, answers and screenshot events
+- TanStack Start (React 19) + Tailwind CSS 4, built with Nitro into a Node server (`.output/`)
+- Postgres via Drizzle ORM (`pg`), for rooms, players, answers and screenshot events
 - TanStack Start server functions for the backend. Updates arrive by polling about every 1.2 s.
 
 ## Run locally
 
 ```bash
+cp .env.example .env   # fill in values, point DATABASE_URL at a local Postgres
 pnpm install
-netlify dev
+pnpm db:migrate
+pnpm dev
 ```
+
+## Deploy (Hetzner, Docker Compose + Caddy)
+
+1. Point your domain's DNS A record to the server and install Docker.
+2. `git clone` the repo, then `cp .env.example .env` and set `DOMAIN`, `POSTGRES_PASSWORD`, `SESSION_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
+3. `docker compose up -d --build`. Migrations run automatically; Caddy gets the HTTPS certificate.
+4. Update later with `git pull && docker compose up -d --build`.
+
+The admin dashboard is at `/admin` and signs in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
 ## Editing questions
 

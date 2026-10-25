@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import {
-  acceptInvite,
-  handleAuthCallback,
-  login,
-  logout,
-  signup,
-  updateUser,
-} from '@netlify/identity'
 import { Check, Clock, Copy, LogOut, MessageCircleHeart, Radio, Share2, Trash2, Users } from 'lucide-react'
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getAdminStats, getAdminUser } from '@/lib/admin.functions'
+import { getAdminStats, getAdminUser, loginAdmin, logoutAdmin } from '@/lib/admin.functions'
 import {
   deleteSecretMessage,
   getSecretMessages,
@@ -33,53 +25,23 @@ export const Route = createFileRoute('/admin')({
 
 type AdminUser = Awaited<ReturnType<typeof getAdminUser>>
 type Stats = Awaited<ReturnType<typeof getAdminStats>>
-// Invite and recovery links land here with a token in the URL hash
-type Pending = { kind: 'invite'; token: string } | { kind: 'recovery' } | null
 
 function AdminPage() {
   const [user, setUser] = useState<AdminUser | undefined>(undefined)
-  const [pending, setPending] = useState<Pending>(null)
 
   const loadUser = useCallback(async () => {
     setUser(await getAdminUser().catch(() => null))
   }, [])
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        const cb = await handleAuthCallback()
-        if (cb?.type === 'invite' && cb.token)
-          setPending({ kind: 'invite', token: cb.token })
-        else if (cb?.type === 'recovery') setPending({ kind: 'recovery' })
-      } catch {
-        // Expired or already used link: fall back to the login form
-      }
-      await loadUser()
-    })()
+    loadUser()
   }, [loadUser])
 
   let body: React.ReactNode
-  if (pending) {
-    body = (
-      <SetPassword
-        pending={pending}
-        onDone={async () => {
-          setPending(null)
-          await loadUser()
-        }}
-      />
-    )
-  } else if (user === undefined) {
+  if (user === undefined) {
     body = <p className="text-center text-muted-foreground">لحظة…</p>
   } else if (!user) {
     body = <LoginForm onDone={loadUser} />
-  } else if (!user.isAdmin) {
-    body = (
-      <div className="text-center">
-        <p className="font-semibold">الحساب هذا ({user.email}) ما عندوش صلاحية أدمين.</p>
-        <LogoutButton onDone={loadUser} />
-      </div>
-    )
   } else {
     body = <Dashboard email={user.email} onLogout={loadUser} />
   }
@@ -100,37 +62,19 @@ function AdminPage() {
 }
 
 function LoginForm({ onDone }: { onDone: () => Promise<void> }) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
-    const email = String(f.get('email'))
-    const password = String(f.get('password'))
     setBusy(true)
     setError(null)
-    setNotice(null)
     try {
-      if (mode === 'signup') {
-        const user = await signup(email, password)
-        if (!user.confirmedAt) {
-          setNotice('بعثنالك إيمايل، أكّد الحساب من الرابط اللي فيه وبعد ادخل.')
-          setMode('login')
-          return
-        }
-      } else {
-        await login(email, password)
-      }
+      await loginAdmin({ data: { email: String(f.get('email')), password: String(f.get('password')) } })
       await onDone()
     } catch {
-      setError(
-        mode === 'signup'
-          ? 'ما نجمناش نعملو الحساب. الإيمايل هذا ما عندوش الحق، ولا الحساب موجود ديجا.'
-          : 'الإيمايل ولا كلمة السر غالطين، ولا الحساب مازال ما تأكّدش.',
-      )
+      setError('الإيمايل ولا كلمة السر غالطين.')
     } finally {
       setBusy(false)
     }
@@ -141,67 +85,16 @@ function LoginForm({ onDone }: { onDone: () => Promise<void> }) {
       onSubmit={submit}
       className="mx-auto max-w-sm space-y-3 rounded-3xl border border-border bg-card/90 p-6"
     >
-      <h1 className="text-center font-display text-2xl font-bold">
-        {mode === 'login' ? 'دخول الأدمين' : 'حساب أدمين جديد'}
-      </h1>
+      <h1 className="text-center font-display text-2xl font-bold">دخول الأدمين</h1>
       <Input name="email" type="email" dir="ltr" required autoComplete="email" placeholder="email@example.com" className="h-12 rounded-xl" />
-      <Input name="password" type="password" dir="ltr" required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'signup' ? 8 : undefined} placeholder="••••••••" className="h-12 rounded-xl" />
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {notice && <p className="text-sm text-emerald-400">{notice}</p>}
-      <Button type="submit" disabled={busy} className="btn-love h-12 w-full rounded-xl font-semibold">
-        {busy ? 'لحظة…' : mode === 'login' ? 'ادخل' : 'اعمل الحساب'}
-      </Button>
-      <button
-        type="button"
-        onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-        className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
-      >
-        {mode === 'login' ? 'أوّل مرّة؟ اعمل حساب' : 'عندي حساب، نحب ندخل'}
-      </button>
-    </form>
-  )
-}
-
-function SetPassword({ pending, onDone }: { pending: NonNullable<Pending>; onDone: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const password = String(new FormData(e.currentTarget).get('password'))
-    setBusy(true)
-    setError(null)
-    try {
-      if (pending.kind === 'invite') await acceptInvite(pending.token, password)
-      else await updateUser({ password })
-      await onDone()
-    } catch {
-      setError('ما نجمناش نسجّلو كلمة السر. جرّب كلمة سر أطول ولا اطلب رابط جديد.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form
-      onSubmit={submit}
-      className="mx-auto max-w-sm space-y-3 rounded-3xl border border-border bg-card/90 p-6"
-    >
-      <h1 className="text-center font-display text-2xl font-bold">
-        {pending.kind === 'invite' ? 'اختار كلمة سر للحساب' : 'كلمة سر جديدة'}
-      </h1>
-      <Input name="password" type="password" dir="ltr" required minLength={8} autoComplete="new-password" placeholder="••••••••" className="h-12 rounded-xl" />
+      <Input name="password" type="password" dir="ltr" required autoComplete="current-password" placeholder="••••••••" className="h-12 rounded-xl" />
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
       <Button type="submit" disabled={busy} className="btn-love h-12 w-full rounded-xl font-semibold">
-        {busy ? 'لحظة…' : 'سجّل'}
+        {busy ? 'لحظة…' : 'ادخل'}
       </Button>
     </form>
   )
@@ -213,7 +106,7 @@ function LogoutButton({ onDone }: { onDone: () => Promise<void> }) {
       variant="secondary"
       className="mt-4 rounded-xl"
       onClick={async () => {
-        await logout().catch(() => {})
+        await logoutAdmin().catch(() => {})
         await onDone()
       }}
     >
