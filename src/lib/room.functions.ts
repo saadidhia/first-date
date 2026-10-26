@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { db } from '../../db'
 import { answers, events, players, rooms } from '../../db/schema'
+import { recordActivity } from './activity'
 import { computeCompat } from './compat'
 import { computeMarriageReport } from './marriage'
 import {
@@ -123,6 +124,7 @@ export const getRoomState = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { room: initialRoom, player: me } = await authorize(data.code, data.token)
     await db.update(players).set({ lastSeenAt: new Date() }).where(eq(players.id, me.id))
+    await recordActivity()
     await advance(initialRoom)
 
     const [room] = await db.select().from(rooms).where(eq(rooms.id, initialRoom.id))

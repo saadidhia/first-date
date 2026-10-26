@@ -35,7 +35,11 @@ export const players = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex('players_room_role_idx').on(t.roomId, t.role)],
+  (t) => [
+    uniqueIndex('players_room_role_idx').on(t.roomId, t.role),
+    index('players_created_idx').on(t.createdAt),
+    index('players_last_seen_idx').on(t.lastSeenAt),
+  ],
 )
 
 export const answers = pgTable(
@@ -88,3 +92,9 @@ export const secretMessages = pgTable(
   },
   (t) => [index('secret_messages_created_idx').on(t.createdAt)],
 )
+
+// One row per minute in which at least one player's room polled, so the admin can see
+// whether the site ever had nobody on it
+export const activityMinutes = pgTable('activity_minutes', {
+  minute: timestamp({ withTimezone: true }).primaryKey(),
+})
