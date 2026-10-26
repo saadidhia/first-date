@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SirRouteImport } from './routes/sir'
+import { Route as AdminStatsRouteImport } from './routes/admin_.stats'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const SirRoute = SirRouteImport.update({
   path: '/sir',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminStatsRoute = AdminStatsRouteImport.update({
+  id: '/admin_/stats',
+  path: '/admin/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
   id: '/room/$code',
   path: '/room/$code',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin/stats': typeof AdminStatsRoute
   '/room/$code': typeof RoomCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin/stats': typeof AdminStatsRoute
   '/room/$code': typeof RoomCodeRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin_/stats': typeof AdminStatsRoute
   '/room/$code': typeof RoomCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/sir' | '/room/$code'
+  fullPaths: '/' | '/admin' | '/sir' | '/admin/stats' | '/room/$code'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/sir' | '/room/$code'
-  id: '__root__' | '/' | '/admin' | '/sir' | '/room/$code'
+  to: '/' | '/admin' | '/sir' | '/admin/stats' | '/room/$code'
+  id: '__root__' | '/' | '/admin' | '/sir' | '/admin_/stats' | '/room/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   SirRoute: typeof SirRoute
+  AdminStatsRoute: typeof AdminStatsRoute
   RoomCodeRoute: typeof RoomCodeRoute
 }
 
@@ -92,6 +102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SirRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/stats': {
+      id: '/admin_/stats'
+      path: '/admin/stats'
+      fullPath: '/admin/stats'
+      preLoaderRoute: typeof AdminStatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/room/$code': {
       id: '/room/$code'
       path: '/room/$code'
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   SirRoute: SirRoute,
+  AdminStatsRoute: AdminStatsRoute,
   RoomCodeRoute: RoomCodeRoute,
 }
 export const routeTree = rootRouteImport

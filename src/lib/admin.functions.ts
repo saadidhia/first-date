@@ -61,6 +61,7 @@ export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () 
     active,
     lastHour,
     today: await emptyToday(),
+    games: await gamesByMode(),
     days: await dailyStats(),
     recent: recent.map((p) => ({
       ...p,
@@ -102,6 +103,22 @@ async function emptyToday() {
   }
 }
 
+/** Games per mode (First Date vs صحاب): all time, finished, and started today (Tunisia time). */
+async function gamesByMode() {
+  const rows = await db
+    .select({
+      mode: rooms.mode,
+      total: sql<number>`count(*)::int`,
+      done: sql<number>`count(*) filter (where ${rooms.phase} = 'done')::int`,
+      today: sql<number>`count(*) filter (where ${rooms.createdAt} >= date_trunc('day', now() at time zone ${TZ}) at time zone ${TZ})::int`,
+    })
+    .from(rooms)
+    .groupBy(rooms.mode)
+  const empty = { total: 0, done: 0, today: 0 }
+  const of = (mode: string) => rows.find((r) => r.mode === mode) ?? empty
+  return { date: of('date'), friends: of('friends') }
+}
+
 /** Players and games started each day, plus how many minutes had someone on the site. */
 async function dailyStats() {
   const from = new Date(Date.now() - DAYS * 24 * HOUR_MS)
@@ -110,7 +127,15 @@ async function dailyStats() {
 
   const [playerRows, roomRows, minuteRows] = await Promise.all([
     db.select({ day: byDay(players.createdAt), n: count }).from(players).where(gt(players.createdAt, from)).groupBy(sql`1`),
-    db.select({ day: byDay(rooms.createdAt), n: count }).from(rooms).where(gt(rooms.createdAt, from)).groupBy(sql`1`),
+    db
+      .select({
+        day: byDay(rooms.createdAt),
+        n: count,
+        friends: sql<number>`count(*) filter (where ${rooms.mode} = 'friends')::int`,
+      })
+      .from(rooms)
+      .where(gt(rooms.createdAt, from))
+      .groupBy(sql`1`),
     db
       .select({ day: byDay(activityMinutes.minute), n: count })
       .from(activityMinutes)
@@ -120,6 +145,7 @@ async function dailyStats() {
   const toMap = (rows: { day: string; n: number }[]) => new Map(rows.map((r) => [r.day, r.n]))
   const p = toMap(playerRows)
   const r = toMap(roomRows)
+  const f = new Map(roomRows.map((row) => [row.day, row.friends]))
   const m = toMap(minuteRows)
 
   const days = [...new Set([...p.keys(), ...r.keys(), ...m.keys()])].sort().reverse()
@@ -127,6 +153,8 @@ async function dailyStats() {
     day,
     players: p.get(day) ?? 0,
     rooms: r.get(day) ?? 0,
+    dateRooms: (r.get(day) ?? 0) - (f.get(day) ?? 0),
+    friendsRooms: f.get(day) ?? 0,
     activeMinutes: m.get(day) ?? null,
   }))
 }
