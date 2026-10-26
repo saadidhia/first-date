@@ -32,8 +32,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <nav className="flex gap-1 rounded-2xl border border-border bg-card/60 p-1">
-            <Tab to="/admin" icon={<MessageCircleHeart className="size-4" />} label="الرسائل" />
-            <Tab to="/admin/stats" icon={<BarChart3 className="size-4" />} label="الإحصائيات" />
+            <Tab to="/admin" icon={<BarChart3 className="size-4" />} label="الإحصائيات" />
+            <Tab to="/admin/messages" icon={<MessageCircleHeart className="size-4" />} label="الرسائل" />
           </nav>
           <span className="text-sm text-muted-foreground" dir="ltr">
             {user.email}
@@ -60,7 +60,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Tab({ to, icon, label }: { to: '/admin' | '/admin/stats'; icon: React.ReactNode; label: string }) {
+function Tab({ to, icon, label }: { to: '/admin' | '/admin/messages'; icon: React.ReactNode; label: string }) {
   return (
     <Link
       to={to}
