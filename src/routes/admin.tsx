@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { Check, Clock, Copy, LogOut, MessageCircleHeart, Radio, Share2, Trash2, Users } from 'lucide-react'
+import { CalendarDays, Check, Clock, Copy, LogOut, Moon, MessageCircleHeart, Radio, Share2, Trash2, Users } from 'lucide-react'
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
@@ -152,7 +152,7 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => Promise
         </span>
       </div>
       {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
         <StatCard
           icon={<Users className="size-5" />}
           label="عدد الأشخاص اللي دخلو"
@@ -172,7 +172,9 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => Promise
           hint="لعبو في آخر 60 دقيقة"
           value={fmt(stats?.lastHour)}
         />
+        <EmptyTodayCard today={stats?.today} />
       </div>
+      {stats && <DailyTable days={stats.days} />}
       <SecretInbox />
       {stats && <RecentList people={stats.recent} />}
       <p className="mt-4 text-xs text-muted-foreground">
@@ -181,6 +183,76 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => Promise
       </p>
       <LogoutButton onDone={onLogout} />
     </div>
+  )
+}
+
+const clock = (iso: string) => new Date(iso).toLocaleTimeString('ar-TN', { hour: '2-digit', minute: '2-digit' })
+
+/** Whether there was a minute today with nobody playing. */
+function EmptyTodayCard({ today }: { today: Stats['today'] | undefined }) {
+  let value = '—'
+  let hint = 'نحسبو من نصّ الليل (بتوقيت تونس)'
+  if (today && !today.since) {
+    hint = 'مازال ما عندناش معلومات على اليوم'
+  } else if (today?.since) {
+    const from = `من ${clock(today.since)}`
+    if (today.emptyMinutes === 0) {
+      value = 'لا'
+      hint = `ديما كان فما شكون يلعب ${from}`
+    } else {
+      value = 'إيه'
+      const h = Math.floor(today.emptyMinutes / 60)
+      const m = today.emptyMinutes % 60
+      const length = h > 0 ? `${h} ساعة و${m} دقيقة` : `${m} دقيقة`
+      hint = `فرغ ${length} ${from}، آخر مرّة ${clock(today.lastEmptyAt!)}`
+    }
+  }
+  return <StatCard icon={<Moon className="size-5 text-sidi-blue" />} label="الموقع فرغ اليوم؟" hint={hint} value={value} />
+}
+
+function DailyTable({ days }: { days: Stats['days'] }) {
+  const fmt = (n: number) => n.toLocaleString('ar-TN')
+  const duration = (min: number | null) => {
+    if (min == null) return '—'
+    const h = Math.floor(min / 60)
+    return h > 0 ? `${h}س ${min % 60}د` : `${min}د`
+  }
+  return (
+    <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
+      <div className="flex items-center gap-2">
+        <CalendarDays className="size-5 text-gold" />
+        <h2 className="font-display text-lg font-semibold">كل نهار</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">آخر 30 يوم، بتوقيت تونس. اللي يلعب زوز لعبات يتحسب زوز مرّات.</p>
+      {days.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">حتى حد ما لعب في آخر 30 يوم.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="text-start">
+                <th className="py-2 text-start font-normal">النهار</th>
+                <th className="py-2 text-start font-normal">لاعبين</th>
+                <th className="py-2 text-start font-normal">لعبات</th>
+                <th className="py-2 text-start font-normal">وقت فيه ناس</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border tabular-nums">
+              {days.map((d) => (
+                <tr key={d.day}>
+                  <td className="py-2">
+                    {new Date(`${d.day}T12:00:00Z`).toLocaleDateString('ar-TN', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </td>
+                  <td className="py-2 font-semibold">{fmt(d.players)}</td>
+                  <td className="py-2">{fmt(d.rooms)}</td>
+                  <td className="py-2 text-muted-foreground">{duration(d.activeMinutes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
