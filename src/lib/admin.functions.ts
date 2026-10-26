@@ -9,9 +9,9 @@ import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 // A player counts as "using the site now" if their room polled within this window
 const ACTIVE_MS = 20_000
 const HOUR_MS = 60 * 60 * 1000
-// Days in the daily table, counted in Tunisia time
+// Days in the daily table and chart, counted in Tunisia time
 const TZ = sql.raw(`'Africa/Tunis'`)
-const DAYS = 30
+const DAYS = 90
 
 /** The signed-in admin, or null. */
 export const getAdminUser = createServerFn({ method: 'GET' }).handler(async () => {
@@ -126,7 +126,16 @@ async function dailyStats() {
   const count = sql<number>`count(*)::int`
 
   const [playerRows, roomRows, minuteRows] = await Promise.all([
-    db.select({ day: byDay(players.createdAt), n: count }).from(players).where(gt(players.createdAt, from)).groupBy(sql`1`),
+    db
+      .select({
+        day: byDay(players.createdAt),
+        n: count,
+        friends: sql<number>`count(*) filter (where ${rooms.mode} = 'friends')::int`,
+      })
+      .from(players)
+      .innerJoin(rooms, eq(players.roomId, rooms.id))
+      .where(gt(players.createdAt, from))
+      .groupBy(sql`1`),
     db
       .select({
         day: byDay(rooms.createdAt),
@@ -146,12 +155,15 @@ async function dailyStats() {
   const p = toMap(playerRows)
   const r = toMap(roomRows)
   const f = new Map(roomRows.map((row) => [row.day, row.friends]))
+  const pf = new Map(playerRows.map((row) => [row.day, row.friends]))
   const m = toMap(minuteRows)
 
   const days = [...new Set([...p.keys(), ...r.keys(), ...m.keys()])].sort().reverse()
   return days.map((day) => ({
     day,
     players: p.get(day) ?? 0,
+    datePlayers: (p.get(day) ?? 0) - (pf.get(day) ?? 0),
+    friendsPlayers: pf.get(day) ?? 0,
     rooms: r.get(day) ?? 0,
     dateRooms: (r.get(day) ?? 0) - (f.get(day) ?? 0),
     friendsRooms: f.get(day) ?? 0,
