@@ -9,7 +9,8 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 
-// A date room. `phase` drives the game: waiting -> question -> reveal -> ... -> done
+// A date room. `phase` drives the game: waiting -> question -> reveal -> ... -> done.
+// A spin question goes spin (host turns the wheel) -> spinning -> question -> reveal.
 export const rooms = pgTable('rooms', {
   id: serial().primaryKey(),
   code: text().notNull().unique(),
@@ -18,6 +19,10 @@ export const rooms = pgTable('rooms', {
   currentIndex: integer('current_index').notNull().default(0),
   phaseEndsAt: timestamp('phase_ends_at', { withTimezone: true }),
   questionIds: jsonb('question_ids').$type<string[]>().notNull(),
+  // Who the wheel landed on, by question index (friends rooms)
+  spins: jsonb().$type<Record<string, number>>().notNull().default({}),
+  // The joker the spun player can use once: a question swapped for another one
+  joker: jsonb().$type<{ index: number; skipped: string }>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -36,7 +41,8 @@ export const players = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex('players_room_role_idx').on(t.roomId, t.role),
+    // A date room has one guest, a friends room up to 6 more: the limit is checked in joinRoom
+    index('players_room_idx').on(t.roomId),
     index('players_created_idx').on(t.createdAt),
     index('players_last_seen_idx').on(t.lastSeenAt),
   ],
@@ -53,7 +59,9 @@ export const answers = pgTable(
       .notNull()
       .references(() => players.id, { onDelete: 'cascade' }),
     questionIndex: integer('question_index').notNull(),
-    optionIndex: integer('option_index'), // null when the answer is free text
+    optionIndex: integer('option_index'), // null when the answer is free text or a vote
+    // The player voted for, on vote questions
+    voteFor: integer('vote_for').references(() => players.id, { onDelete: 'cascade' }),
     text: text().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

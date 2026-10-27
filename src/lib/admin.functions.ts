@@ -1,6 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { and, desc, eq, gt, ilike, or, sql, type SQL } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/pg-core'
+import { and, asc, desc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
@@ -44,7 +43,11 @@ export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () 
     .where(gt(players.lastSeenAt, new Date(Date.now() - HOUR_MS)))
   // Every game where someone polled in the last hour, most recent first
   const hourAgo = new Date(Date.now() - HOUR_MS)
-  const recent = await listGames(or(gt(host.lastSeenAt, hourAgo), gt(guest.lastSeenAt, hourAgo)), 'seen', 100)
+  const recent = await listGames(
+    sql`exists (select 1 from ${players} where ${players.roomId} = ${rooms.id} and ${players.lastSeenAt} > ${hourAgo})`,
+    'seen',
+    100,
+  )
   return {
     total,
     active,
@@ -57,12 +60,9 @@ export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () 
   }
 })
 
-const host = alias(players, 'host')
-const guest = alias(players, 'guest')
-
-/** Games with both their players (guest is null until someone joins), newest first. */
+/** Games with all their players (host first), newest first. */
 async function listGames(where: SQL | undefined, order: 'created' | 'seen', limit: number) {
-  const lastSeen = sql`greatest(${host.lastSeenAt}, coalesce(${guest.lastSeenAt}, ${host.lastSeenAt}))`
+  const lastSeen = sql`(select max(${players.lastSeenAt}) from ${players} where ${players.roomId} = ${rooms.id})`
   const rows = await db
     .select({
       id: rooms.id,
@@ -72,27 +72,37 @@ async function listGames(where: SQL | undefined, order: 'created' | 'seen', limi
       currentIndex: rooms.currentIndex,
       questions: sql<number>`jsonb_array_length(${rooms.questionIds})::int`,
       createdAt: rooms.createdAt,
-      host: { id: host.id, name: host.name, gender: host.gender, lastSeenAt: host.lastSeenAt },
-      guest: { id: guest.id, name: guest.name, gender: guest.gender, lastSeenAt: guest.lastSeenAt },
     })
     .from(rooms)
-    .innerJoin(host, and(eq(host.roomId, rooms.id), eq(host.role, 'host')))
-    .leftJoin(guest, and(eq(guest.roomId, rooms.id), eq(guest.role, 'guest')))
     .where(where)
     .orderBy(order === 'seen' ? desc(lastSeen) : desc(rooms.createdAt))
     .limit(limit)
-  const player = (p: { id: number; name: string; gender: string | null; lastSeenAt: Date } | null) =>
-    p && {
-      ...p,
-      online: Date.now() - p.lastSeenAt.getTime() < ACTIVE_MS,
-      lastSeenAt: p.lastSeenAt.toISOString(),
-    }
+  const people = rows.length
+    ? await db
+        .select({
+          id: players.id,
+          roomId: players.roomId,
+          name: players.name,
+          gender: players.gender,
+          lastSeenAt: players.lastSeenAt,
+        })
+        .from(players)
+        .where(inArray(players.roomId, rows.map((r) => r.id)))
+        .orderBy(asc(players.id))
+    : []
   return rows.map((r) => ({
     ...r,
     mode: r.mode === 'friends' ? ('friends' as const) : ('date' as const),
     createdAt: r.createdAt.toISOString(),
-    host: player(r.host)!,
-    guest: player(r.guest),
+    players: people
+      .filter((p) => p.roomId === r.id)
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        gender: p.gender,
+        online: Date.now() - p.lastSeenAt.getTime() < ACTIVE_MS,
+        lastSeenAt: p.lastSeenAt.toISOString(),
+      })),
   }))
 }
 
@@ -113,7 +123,9 @@ export const getAdminGames = createServerFn({ method: 'GET' })
     if (data.mode !== 'all') conditions.push(eq(rooms.mode, data.mode))
     if (data.q) {
       const like = `%${data.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
-      conditions.push(or(ilike(host.name, like), ilike(guest.name, like)))
+      conditions.push(
+        sql`exists (select 1 from ${players} where ${players.roomId} = ${rooms.id} and ${players.name} ilike ${like})`,
+      )
     }
     // One extra row tells the page whether there are more to load
     const games = await listGames(and(...conditions), 'created', data.limit + 1)

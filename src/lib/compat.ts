@@ -27,7 +27,7 @@ export type CompatResult = {
   answeredTogether: number
 }
 
-const TRAITS: Trait[] = [
+export const TRAITS: Trait[] = [
   'romance',
   'adventure',
   'jealousy',
@@ -137,6 +137,10 @@ const FEMININE_LABEL: Record<Mode, Partial<Record<Trait, string>>> = {
   },
 }
 
+/** A trait's short label (with emoji), worded for the person it describes. */
+export const traitLabel = (mode: Mode, t: Trait, female: boolean) =>
+  female ? FEMININE_LABEL[mode][t]! : TRAIT_TEXT[mode][t].label
+
 const feminineTip = (tip: string) =>
   tip
     .replace('عطيه مساحتو', 'عطيها مساحتها')
@@ -151,7 +155,7 @@ const feminineTip = (tip: string) =>
     .replace('شاورو', 'شاورها')
     .replace('يستاهل', 'تستاهل')
 
-function vectorFor(list: AnswerLite[], qids: string[], only?: Category) {
+export function vectorFor(list: AnswerLite[], qids: string[], only?: Category) {
   const v: Record<Trait, number> = Object.fromEntries(TRAITS.map((t) => [t, 0])) as Record<
     Trait,
     number
@@ -282,7 +286,7 @@ export function computeCompat(
   }
 
   const texts = TRAIT_TEXT[mode]
-  const labelOf = (t: Trait) => (female ? FEMININE_LABEL[mode][t]! : texts[t].label)
+  const labelOf = (t: Trait) => traitLabel(mode, t, female)
   const themTotal = TRAITS.reduce((s, t) => s + them[t], 0) || 1
   const top = [...TRAITS]
     .sort((x, y) => them[y] - them[x])

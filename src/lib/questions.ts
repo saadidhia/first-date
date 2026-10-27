@@ -8,6 +8,7 @@ import { FLOUS, MOCHARKA } from './bank/date-1'
 import { HORRIYA, KHIYANA } from './bank/date-3'
 import { IHRAJ, MAWQEF, NADHRA } from './bank/friends-1'
 import { ARK_S, FLOUS_S, SARAHA, SIRR } from './bank/friends-2'
+import { SPINS, VOTES } from './bank/friends-3'
 import { MORE_MARRIAGE } from './bank/marriage'
 import type { RawQuestion } from './bank/types'
 
@@ -79,6 +80,11 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   sirr: '🤐 الأسرار',
   '3ark_s': '🥊 العرك',
   saraha: '🔥 الصراحة',
+}
+
+/** The topic label as a player sees it: in a friends group, "your friends" in the plural. */
+export function categoryLabel(cat: Category, partnerGender?: string | null) {
+  return partnerGender === 'group' && cat === 'nadhra' ? '👀 نظرتك لصحابك' : CATEGORY_LABEL[cat]
 }
 
 const CLASSICS: Omit<Question, 'mode'>[] = [
@@ -691,8 +697,11 @@ export function getMarriageQuestion(id: string): MarriageQuestion | undefined {
 
 /**
  * Questions are written once and worded for each player when shown:
- * - {شريكك} / {صاحبك} become شريكتك / صاحبتك when the other player is a woman.
- * - {m|f} picks the masculine or feminine form for the other player, e.g. {معاه|معاها}.
+ * - {شريكك} / {صاحبك} become شريكتك / صاحبتك when the other player is a woman, and
+ *   {صاحبك} becomes صحابك when there are several (a friends group of 3 or more).
+ * - {m|f|p} picks the masculine, feminine or plural form for the other player(s), e.g.
+ *   {معاه|معاها|معاهم}. The plural is only used by friends questions; without it, a group
+ *   gets the masculine form.
  * - {@m|f} picks the form for the player answering, e.g. {@متأكّد|متأكّدة}.
  * Without a known gender the masculine form is used.
  */
@@ -702,12 +711,22 @@ export function personalize(
   partnerGender: string | null | undefined,
 ) {
   const she = partnerGender === 'female'
+  const many = partnerGender === 'group'
   return text
-    .replaceAll('{صاحبك}', she ? 'صاحبتك' : 'صاحبك')
+    .replaceAll('{صاحبك}', many ? 'صحابك' : she ? 'صاحبتك' : 'صاحبك')
     .replaceAll('{شريكك}', she ? 'شريكتك' : 'شريكك')
-    .replace(/\{(@?)([^{}|]*)\|([^{}|]*)\}/g, (_, self, m, f) =>
-      (self ? gender === 'female' : she) ? f : m,
+    .replace(/\{(@?)([^{}|]*)\|([^{}|]*)(?:\|([^{}|]*))?\}/g, (_, self, m, f, p) =>
+      self ? (gender === 'female' ? f : m) : many ? (p ?? m) : she ? f : m,
     )
+}
+
+/**
+ * How to word "the other player" in a friends room: 'group' when there are several of them
+ * (the plural forms), otherwise their gender.
+ */
+export function othersGender(genders: (string | null | undefined)[]) {
+  if (genders.length > 1) return 'group'
+  return genders[0] === 'female' ? 'female' : 'male'
 }
 
 /**
@@ -741,20 +760,52 @@ export function questionFor(
   }
 }
 
-export const MAIN_QUESTIONS = 25
-export const FINALE_QUESTIONS = 5
-export const QUESTIONS_PER_DATE = MAIN_QUESTIONS + FINALE_QUESTIONS
+export const QUESTIONS_PER_ROOM = 30
 export const QUESTION_SECONDS = 45
 export const REVEAL_SECONDS = 4
 export const INTRO_SECONDS = 5
+// The wheel: the host has SPIN_SECONDS to turn it (then it turns by itself), it spins for
+// SPINNING_SECONDS, and the player it lands on gets PRIVATE_SECONDS per private question
+export const SPIN_SECONDS = 30
+export const SPINNING_SECONDS = 6
+export const PRIVATE_SECONDS = 90
 
 const FINALE_CATS = new Set<Category>(['saraha'])
+
+// How each room ends: a date with 5 marriage questions, friends with 8 votes and 2 spins
+const ENDING: Record<Mode, { vote: number; spin: number; finale: number }> = {
+  date: { vote: 0, spin: 0, finale: 5 },
+  friends: { vote: 8, spin: 2, finale: 0 },
+}
 
 // Each room takes the same number from every core topic, so the final note covers them all
 const CORE: Record<Mode, Category[]> = {
   date: ['flous', 'mocharka', '3ayla', 'ndhafa', 'khiyana', '7orriya', '3ark', 'nafsi'],
   friends: ['nadhra', 'mawqef', 'i7raj', 'flous_s', 'sirr', '3ark_s'],
 }
+
+const VOTE_IDS = VOTES.map((_, i) => `vote_${i}`)
+const SPIN_IDS = SPINS.map((_, i) => `spin_${i}`)
+
+/**
+ * The friends rounds that have no options: a vote (everyone names one of the others) or a
+ * spin (the wheel picks one player, who answers in their own words).
+ */
+export function roundFor(id: string): { kind: 'vote' | 'spin'; text: string } | undefined {
+  const [kind, n] = id.split('_')
+  if (kind === 'vote' && VOTES[Number(n)]) return { kind, text: VOTES[Number(n)] }
+  if (kind === 'spin' && SPINS[Number(n)]) return { kind, text: SPINS[Number(n)] }
+  return undefined
+}
+
+/** A spin question the room doesn't have yet, for the joker. */
+export function otherSpin(ids: string[]): string | undefined {
+  const used = new Set(ids)
+  const left = SPIN_IDS.filter((id) => !used.has(id))
+  return left[Math.floor(Math.random() * left.length)]
+}
+
+export const ROUND_LABEL = { vote: '🗳️ تصويت', spin: '🎡 العجلة' } as const
 
 function shuffle<T>(list: T[]): T[] {
   const a = [...list]
@@ -771,30 +822,53 @@ function fresh(ids: string[], seen: Set<string>) {
   return [...s.filter((id) => !seen.has(id)), ...s.filter((id) => seen.has(id))]
 }
 
-/**
- * Picks a random set of 30 for a new room: 25 spread over the mode's topics, then the 5
- * finale questions (marriage for a date, "الصراحة" for friends). Questions in `seen`
- * (the host's previous rooms) are only reused once the fresh ones run out.
- */
-export function pickQuestionIds(mode: Mode = 'date', seenIds: string[] = []): string[] {
-  const seen = new Set(seenIds)
-  const pool = QUESTIONS.filter((q) => q.mode === mode && !FINALE_CATS.has(q.cat))
+/** `count` questions of the mode spread over its core topics, leaving out `taken`. */
+function pickCore(mode: Mode, count: number, seen: Set<string>, taken = new Set<string>()) {
+  const pool = QUESTIONS.filter((q) => q.mode === mode && !FINALE_CATS.has(q.cat) && !taken.has(q.id))
   const core = CORE[mode]
-  const perTopic = Math.floor(MAIN_QUESTIONS / core.length)
+  const perTopic = Math.floor(count / core.length)
   const picked: string[] = []
   for (const cat of core) {
     picked.push(...fresh(pool.filter((q) => q.cat === cat).map((q) => q.id), seen).slice(0, perTopic))
   }
-  const taken = new Set(picked)
+  const used = new Set(picked)
   picked.push(
-    ...fresh(pool.filter((q) => !taken.has(q.id)).map((q) => q.id), seen).slice(
-      0,
-      MAIN_QUESTIONS - picked.length,
-    ),
+    ...fresh(pool.filter((q) => !used.has(q.id)).map((q) => q.id), seen).slice(0, count - picked.length),
   )
+  return shuffle(picked)
+}
+
+/**
+ * Picks a random set of 30 for a new room. A date gets 25 spread over its topics, then 5
+ * marriage questions; friends get 20, then 8 votes and 2 spins. Questions in `seen` (the
+ * host's previous rooms) are only reused once the fresh ones run out.
+ */
+export function pickQuestionIds(mode: Mode = 'date', seenIds: string[] = []): string[] {
+  const seen = new Set(seenIds)
+  const end = ENDING[mode]
+  const core = pickCore(mode, QUESTIONS_PER_ROOM - end.vote - end.spin - end.finale, seen)
   const finale =
     mode === 'date'
-      ? MARRIAGE_QUESTIONS.map((q) => q.id)
-      : QUESTIONS.filter((q) => q.cat === 'saraha').map((q) => q.id)
-  return [...shuffle(picked), ...fresh(finale, seen).slice(0, FINALE_QUESTIONS)]
+      ? fresh(
+          MARRIAGE_QUESTIONS.map((q) => q.id),
+          seen,
+        ).slice(0, end.finale)
+      : []
+  return [
+    ...core,
+    ...finale,
+    ...fresh(VOTE_IDS, seen).slice(0, end.vote),
+    ...fresh(SPIN_IDS, seen).slice(0, end.spin),
+  ]
+}
+
+/**
+ * A friends room of two can't vote (each would name the other), so its votes become
+ * regular questions when the game starts. The spins stay.
+ */
+export function withoutVotes(ids: string[], seenIds: string[] = []): string[] {
+  const votes = ids.filter((id) => roundFor(id)?.kind === 'vote').length
+  if (!votes) return ids
+  const extra = pickCore('friends', votes, new Set(seenIds), new Set(ids))
+  return ids.map((id) => (roundFor(id)?.kind === 'vote' ? extra.pop()! : id))
 }

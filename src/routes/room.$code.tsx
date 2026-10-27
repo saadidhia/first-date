@@ -20,7 +20,10 @@ import {
   getRoomPreview,
   getRoomState,
   joinRoom,
+  playJoker,
   reportScreenshot,
+  spin,
+  startRoom,
   submitAnswer,
 } from '@/lib/room.functions'
 import {
@@ -28,6 +31,7 @@ import {
   addSeenQuestions,
   getSavedGender,
   getSavedName,
+  getSeenQuestions,
   getToken,
   saveGender,
   saveName,
@@ -148,11 +152,17 @@ function JoinGate({
                 <Link to="/">رجوع للصفحة الرئيسية</Link>
               </Button>
             </>
-          ) : preview.full ? (
+          ) : preview.full || preview.started ? (
             <>
-              <p className="mt-8 text-lg font-semibold">اللعبة هذي كاملة</p>
+              <p className="mt-8 text-lg font-semibold">
+                {preview.started ? 'اللعبة بدات' : 'اللعبة هذي كاملة'}
+              </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                فيها زوز لاعبين ديجا. تنجم تبدا لعبة متاعك.
+                {preview.started
+                  ? 'ما عادش تنجم تدخل. تنجم تبدا لعبة متاعك.'
+                  : preview.mode === 'friends'
+                    ? `فيها ${preview.maxPlayers} ديجا. تنجم تبدا لعبة متاعك.`
+                    : 'فيها زوز لاعبين ديجا. تنجم تبدا لعبة متاعك.'}
               </p>
               <Button
                 asChild
@@ -182,7 +192,9 @@ function JoinGate({
                     : 'bg-primary/15 text-primary',
                 )}
               >
-                {preview.mode === 'friends' ? '🤝 قعدة صحاب' : '💘 First Date'}
+                {preview.mode === 'friends'
+                  ? `🤝 قعدة صحاب · ${preview.players}/${preview.maxPlayers}`
+                  : '💘 First Date'}
               </span>
               <div className="mt-6 space-y-4 text-start">
                 <div>
@@ -255,10 +267,13 @@ function useRoomState(code: string, token: string) {
         if (shots.length) {
           setAlerts((n) => n + shots.length)
           if (!first.current) {
-            toast.error(
-              `⚠️ ${s.partner?.name ?? 'الشخص الآخر'} ${s.partner?.gender === 'female' ? 'حاولت' : 'حاول'} يصوّر الشاشة!`,
-              { duration: 6000 },
-            )
+            for (const shot of shots) {
+              const who = s.others.find((o) => o.id === shot.playerId)
+              toast.error(
+                `⚠️ ${who?.name ?? 'واحد'} ${who?.gender === 'female' ? 'حاولت' : 'حاول'} يصوّر الشاشة!`,
+                { duration: 6000 },
+              )
+            }
             navigator.vibrate?.(200)
           }
         }
@@ -323,7 +338,9 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
   const hidden = useScreenshotGuard(true, () => {
     reportScreenshot({ data: { code, token } }).catch(() => {})
     toast.warning(
-      `📵 تصوير الشاشة ممنوع! ${state?.partner?.name ?? 'الشخص الآخر'} وصلو تنبيه.`,
+      state?.partner
+        ? `📵 تصوير الشاشة ممنوع! ${state.partner.name} وصلو تنبيه.`
+        : '📵 تصوير الشاشة ممنوع! صحابك وصلهم تنبيه.',
     )
   })
 
@@ -338,21 +355,34 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
     state?.phase,
     state?.current?.index,
     state?.current?.myAnswer,
-    state?.current?.partnerAnswered,
+    state?.current?.answeredIds.length,
   ])
 
-  async function send(optionIndex: number | null, text: string) {
+  async function send(optionIndex: number | null, text: string, voteFor: number | null = null) {
     if (!state?.current || state.current.myAnswer || sending) return
     if (!text.trim()) return
     setSending(true)
     try {
       await submitAnswer({
-        data: { code, token, index: state.current.index, optionIndex, text },
+        data: { code, token, index: state.current.index, optionIndex, text, voteFor },
       })
       setDraft('')
       refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'الجواب ما وصلش، عاود جرّب')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function joker() {
+    if (!state?.current || sending) return
+    setSending(true)
+    try {
+      await playJoker({ data: { code, token, index: state.current.index } })
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'صار مشكل، عاود جرّب')
     } finally {
       setSending(false)
     }
@@ -376,9 +406,19 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
   if (!state) return <FullScreenLoader />
 
   const partner = state.partner
+  const others = state.others
   const friends = state.mode === 'friends'
+  // A friends room is shown as a group chat, except once it turns out to be just two people
+  const group = friends && (others.length > 1 || state.phase === 'waiting')
+  const otherById = new Map(others.map((o) => [o.id, o]))
+  const onlineCount = others.filter((o) => o.online).length
   const canAnswer =
-    state.phase === 'question' && !!state.current && !state.current.myAnswer
+    state.phase === 'question' &&
+    !!state.current &&
+    !state.current.myAnswer &&
+    state.current.myTurn
+  // The private question the wheel gave me: answered in my own words
+  const writing = canAnswer && state.current?.kind === 'spin'
   const done =
     state.phase === 'done'
       ? state.total
@@ -386,8 +426,15 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
         ? 0
         : state.index + (state.phase === 'reveal' ? 1 : 0)
   const sameCount = state.history.filter((h) => h.same).length
-  const finaleStart = state.total - 5
-  const currentFinale = !!state.current?.finale
+  // The finale, the votes and the wheel are shown in gold
+  const special = (i: number) => state.kinds[i] !== 'question'
+  const currentFinale = !!state.current && special(state.current.index)
+  // A short intro before the first question of the finale, the votes and the wheel
+  const introAt = (i: number) =>
+    special(i) && state.kinds[i - 1] !== state.kinds[i] ? (
+      <SectionIntro kind={state.kinds[i]} friends={friends} />
+    ) : null
+  const hasRounds = state.kinds.some((k) => k === 'vote' || k === 'spin')
 
   return (
     <div className="glow-bg flex h-dvh justify-center md:p-6">
@@ -402,39 +449,57 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             >
               <ArrowRight className="size-5" />
             </Link>
-            <div className="relative">
-              <div
-                className={cn(
-                  'grid size-10 place-items-center rounded-full font-display font-bold text-white',
-                  friends ? 'bubble-friends' : 'bg-love',
+            {group ? (
+              <GroupAvatars names={others.map((o) => o.name)} />
+            ) : (
+              <div className="relative">
+                <div
+                  className={cn(
+                    'grid size-10 place-items-center rounded-full font-display font-bold text-white',
+                    friends ? 'bubble-friends' : 'bg-love',
+                  )}
+                >
+                  {partner?.name[0] ?? (friends ? '🤝' : '💘')}
+                </div>
+                {partner?.online && (
+                  <span className="absolute -bottom-0.5 -end-0.5 size-3.5 rounded-full border-2 border-card bg-emerald-400" />
                 )}
-              >
-                {partner?.name[0] ?? (friends ? '🤝' : '💘')}
               </div>
-              {partner?.online && (
-                <span className="absolute -bottom-0.5 -end-0.5 size-3.5 rounded-full border-2 border-card bg-emerald-400" />
-              )}
-            </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="truncate font-semibold">
-                {partner?.name ?? 'نستنّاو الشخص الآخر…'}
+                {group
+                  ? others.length
+                    ? others.map((o) => o.name).join('، ')
+                    : 'نستنّاو صحابك…'
+                  : (partner?.name ?? 'نستنّاو الشخص الآخر…')}
               </div>
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 whitespace-nowrap text-xs">
                 <span
                   className={
-                    partner?.online ? 'text-emerald-400' : 'text-muted-foreground'
+                    (group ? onlineCount > 0 : partner?.online)
+                      ? 'text-emerald-400'
+                      : 'text-muted-foreground'
                   }
                 >
-                  {partner
-                    ? partner.online
-                      ? g(partner.gender, 'متّصل توّا', 'متّصلة توّا')
-                      : g(partner.gender, 'موش متّصل', 'موش متّصلة')
-                    : `الكود ${state.code}`}
+                  {group
+                    ? others.length
+                      ? `👥 ${others.length + 1} · ${onlineCount} متّصلين`
+                      : `الكود ${state.code}`
+                    : partner
+                      ? partner.online
+                        ? g(partner.gender, 'متّصل توّا', 'متّصلة توّا')
+                        : g(partner.gender, 'موش متّصل', 'موش متّصلة')
+                      : `الكود ${state.code}`}
                 </span>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-muted-foreground">
-                  {friends ? '🤝 صحاب' : '💘 First Date'}
-                </span>
+                {!group && (
+                  <>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="text-muted-foreground">
+                      {friends ? '🤝 صحاب' : '💘 First Date'}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
             {sameCount > 0 && (
@@ -460,8 +525,11 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 gold={currentFinale}
               />
             )}
+            {state.phase === 'spin' && (
+              <TimerRing seconds={remaining} total={state.spinSeconds} gold />
+            )}
           </div>
-          {/* One segment per question; the last 5 in gold */}
+          {/* One segment per question; the finale, votes and wheel in gold */}
           <div className="mt-2 flex gap-[3px]" dir="rtl">
             {Array.from({ length: state.total }, (_, i) => (
               <div
@@ -469,14 +537,14 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 className={cn(
                   'h-1 flex-1 rounded-full transition-colors duration-500',
                   i < done
-                    ? i >= finaleStart
+                    ? special(i)
                       ? 'bg-gold'
                       : friends
                         ? 'bg-sidi-blue'
                         : 'bg-primary'
-                    : i === done && state.phase === 'question'
+                    : i === done && ['question', 'spin', 'spinning'].includes(state.phase)
                       ? 'animate-pulse bg-muted-foreground/60'
-                      : i >= finaleStart
+                      : special(i)
                         ? 'bg-gold/25'
                         : 'bg-muted',
                 )}
@@ -495,9 +563,22 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             {friends ? (
               <>
                 أهلا {state.me.name} 🤝 {state.total} سؤال على صحبتكم. كل واحد
-                يجاوب وحدو، وجواب الآخر يبان كي تجاوبو الزوز. آخر 5{' '}
-                <span className="font-semibold text-gold">صراحة كاملة 🔥</span>،
-                وفي الآخر تقرير سرّي ليك إنت برك 🤫
+                يجاوب وحدو، وأجوبة صحابك يبانو كي تجاوبو الكل.{' '}
+                {hasRounds ? (
+                  <>
+                    في الآخر{' '}
+                    <span className="font-semibold text-gold">
+                      {state.kinds.includes('vote') ? 'تصويت 🗳️ و' : ''}العجلة 🎡
+                    </span>
+                    ، وتقرير سرّي ليك إنت برك 🤫
+                  </>
+                ) : (
+                  <>
+                    آخر 5{' '}
+                    <span className="font-semibold text-gold">صراحة كاملة 🔥</span>،
+                    وفي الآخر تقرير سرّي ليك إنت برك 🤫
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -512,75 +593,164 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
           {state.phase === 'waiting' && (
             <InviteCard code={state.code} friends={friends} />
           )}
-          {partner && (
-            <SystemPill>
-              🎉 {partner.name} {g(partner.gender, 'دخل', 'دخلت')} للّعبة
+          {others.map((o) => (
+            <SystemPill key={o.id}>
+              🎉 {o.name} {g(o.gender, 'دخل', 'دخلت')} للّعبة
             </SystemPill>
+          ))}
+          {state.phase === 'waiting' && friends && (
+            <Lobby state={state} code={code} token={token} onStarted={refresh} />
           )}
           {state.phase === 'intro' && (
             <BotBubble>
-              الزوز هنا! نبداو بعد{' '}
+              {group ? 'القروب حاضر!' : 'الزوز هنا!'} نبداو بعد{' '}
               <strong className="text-primary">{remaining}</strong> ⏳
             </BotBubble>
           )}
 
-          {state.history.map((h, i) => (
+          {state.history.map((h) => (
             <div key={h.index} className="space-y-1.5">
-              {h.finale && !state.history[i - 1]?.finale && (
-                <FinaleIntro friends={friends} />
-              )}
+              {introAt(h.index)}
               <QuestionBubble
                 category={h.category}
                 index={h.index}
                 total={state.total}
-                text={h.text}
-                finale={h.finale}
+                text={h.kind === 'spin' && h.chosen ? `${h.chosen.name}، ${h.text}` : h.text}
+                finale={special(h.index)}
               />
-              <TheirBubble name={partner?.name}>
-                {h.marriage ? (
-                  <span className="flex items-center gap-1.5 text-sm opacity-80">
-                    <Lock className="size-3.5" /> يبان في التقرير الأخير
-                  </span>
-                ) : (
-                  (h.theirs ?? (
-                    <em className="opacity-70">
-                      ⏱ {g(partner?.gender, 'ما لحقش', 'ما لحقتش')}
-                    </em>
-                  ))
-                )}
-              </TheirBubble>
-              <MyBubble friends={friends} finale={h.finale}>
-                {h.mine ?? <em className="opacity-80">⏱ ما لحقتش</em>}
-              </MyBubble>
-              {h.same && (
-                <SystemPill tone="match">✅ نفس الجواب</SystemPill>
+              {h.kind === 'vote' ? (
+                <>
+                  <MyBubble friends={friends} finale>
+                    {h.mine ? `🗳️ ${h.mine}` : <em className="opacity-80">⏱ ما لحقتش تصوّت</em>}
+                  </MyBubble>
+                  <SystemPill>
+                    🗳️ صوّتو {h.voters} من {others.length + 1} · النتيجة في التقرير السرّي 🤫
+                  </SystemPill>
+                </>
+              ) : h.kind === 'spin' ? (
+                <>
+                  {h.joker && <JokerPill chosen={h.chosen} me={state.me.id} />}
+                  {h.chosen?.id === state.me.id ? (
+                    <MyBubble friends={friends} finale>
+                      {h.mine ?? <em className="opacity-80">⏱ ما لحقتش</em>}
+                    </MyBubble>
+                  ) : (
+                    <TheirBubble name={h.chosen?.name} showName={group}>
+                      <span className="flex items-center gap-1.5 text-sm opacity-80">
+                        <Lock className="size-3.5" />
+                        {h.answered
+                          ? `${g(h.chosen?.gender, 'جاوب', 'جاوبت')} · الجواب في التقرير السرّي`
+                          : `⏱ ${g(h.chosen?.gender, 'ما لحقش', 'ما لحقتش')}`}
+                      </span>
+                    </TheirBubble>
+                  )}
+                </>
+              ) : (
+                <>
+                  {h.theirs.map((t) => {
+                    const o = otherById.get(t.id)
+                    return (
+                      <TheirBubble key={t.id} name={o?.name} showName={group}>
+                        {h.marriage ? (
+                          <span className="flex items-center gap-1.5 text-sm opacity-80">
+                            <Lock className="size-3.5" /> يبان في التقرير الأخير
+                          </span>
+                        ) : (
+                          (t.text ?? (
+                            <em className="opacity-70">
+                              ⏱ {g(o?.gender, 'ما لحقش', 'ما لحقتش')}
+                            </em>
+                          ))
+                        )}
+                      </TheirBubble>
+                    )
+                  })}
+                  <MyBubble friends={friends} finale={h.finale}>
+                    {h.mine ?? <em className="opacity-80">⏱ ما لحقتش</em>}
+                  </MyBubble>
+                  {h.same && (
+                    <SystemPill tone="match">
+                      {group
+                        ? `✅ نفس جوابك: ${h.sameWith.map((id) => otherById.get(id)?.name).join('، ')}`
+                        : '✅ نفس الجواب'}
+                    </SystemPill>
+                  )}
+                </>
               )}
             </div>
           ))}
 
+          {state.wheel && (
+            <div className="space-y-1.5">
+              {introAt(state.wheel.index)}
+              <WheelCard
+                wheel={state.wheel}
+                me={state.me}
+                host={others.find((o) => o.host) ?? null}
+                remaining={remaining}
+                code={code}
+                token={token}
+                onSpun={refresh}
+              />
+            </div>
+          )}
+
           {state.current && (
             <div className="space-y-1.5">
-              {state.current.finale &&
-                !state.history[state.history.length - 1]?.finale && (
-                  <FinaleIntro friends={friends} />
-                )}
+              {introAt(state.current.index)}
               <QuestionBubble
                 category={state.current.category}
                 index={state.current.index}
                 total={state.total}
-                text={state.current.text}
-                finale={state.current.finale}
+                text={
+                  state.current.kind === 'spin' && state.current.chosen
+                    ? `${state.current.chosen.name}، ${state.current.text}`
+                    : state.current.text
+                }
+                finale={currentFinale}
                 hint={
                   state.current.myAnswer
                     ? undefined
-                    : `🎯 ${state.me.name}، اختار الجواب اللي يشبهلك بالحق${
-                        partner
-                          ? ` · ${partner.name} ${g(partner.gender, 'يجاوب', 'تجاوب')} على نفس السؤال`
-                          : ''
-                      }`
+                    : state.current.kind === 'vote'
+                      ? `🗳️ اختار واحد من صحابك · حتى حد ما باش يعرف شكون اخترت`
+                      : state.current.kind === 'spin'
+                        ? state.current.myTurn
+                          ? '🎯 العجلة وقفت عليك! اكتب جوابك بيدك · يبان في التقرير السرّي برك'
+                          : `🤫 ${state.current.chosen?.name ?? ''} ${g(state.current.chosen?.gender, 'يكتب', 'تكتب')} جوابو · يبان في التقرير السرّي برك`
+                        : `🎯 ${state.me.name}، اختار الجواب اللي يشبهلك بالحق${
+                            group
+                              ? ' · صحابك يجاوبو على نفس السؤال'
+                              : partner
+                                ? ` · ${partner.name} ${g(partner.gender, 'يجاوب', 'تجاوب')} على نفس السؤال`
+                                : ''
+                          }`
                 }
               />
-              {state.current.partnerAnswered ? (
+              {state.current.joker && <JokerPill chosen={state.current.chosen} me={state.me.id} />}
+              {state.current.kind === 'spin' ? (
+                state.current.myTurn ? (
+                  state.current.jokerLeft &&
+                  !state.current.myAnswer && (
+                    <div className="flex justify-center pt-1">
+                      <button
+                        type="button"
+                        disabled={sending}
+                        onClick={joker}
+                        className="pop-in rounded-full border border-gold/50 bg-gold/10 px-4 py-2 text-sm font-semibold text-gold transition hover:bg-gold/20 active:scale-95 disabled:opacity-50"
+                      >
+                        🃏 جوكر: بدّل السؤال (مرّة وحدة)
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <TypingBubble />
+                )
+              ) : group ? (
+                <>
+                  <AnsweredRow others={others} answeredIds={state.current.answeredIds} />
+                  {state.current.answeredIds.length < others.length && <TypingBubble />}
+                </>
+              ) : partner && state.current.answeredIds.includes(partner.id) ? (
                 <TheirBubble name={partner?.name}>
                   <span className="flex items-center gap-1.5 text-sm opacity-80">
                     <Lock className="size-3.5" />{' '}
@@ -594,7 +764,8 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 <TypingBubble />
               )}
               {state.current.myAnswer && (
-                <MyBubble friends={friends} finale={state.current.finale}>
+                <MyBubble friends={friends} finale={currentFinale}>
+                  {state.current.kind === 'vote' && '🗳️ '}
                   {state.current.myAnswer}
                   <Check className="ms-1 inline size-3.5 opacity-80" />
                 </MyBubble>
@@ -612,7 +783,26 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             canAnswer && currentFinale ? 'border-gold/40' : 'border-border',
           )}
         >
-          {canAnswer && state.current && (
+          {canAnswer && state.current?.kind === 'vote' && (
+            <div className="flex flex-wrap justify-center gap-2 px-3 pt-3">
+              {state.current.choices.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={sending}
+                  onClick={() => send(null, c.name, c.id)}
+                  className="pop-in flex min-h-12 items-center gap-2 rounded-2xl border border-gold/40 bg-background/60 px-4 py-2.5 text-[15px] font-semibold transition hover:border-gold hover:bg-gold/10 active:scale-[0.98] disabled:opacity-50"
+                  style={{ animationDelay: `${i * 60}ms` }}
+                >
+                  <span className="bubble-gold grid size-7 place-items-center rounded-full text-xs font-bold">
+                    {c.name[0]}
+                  </span>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {canAnswer && state.current?.kind === 'question' && (
             <div className="grid gap-1.5 px-3 pt-3">
               {state.current.options.map((o, i) => (
                 <button
@@ -657,19 +847,31 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              disabled={!canAnswer}
-              maxLength={200}
+              disabled={!canAnswer || state.current?.kind === 'vote'}
+              maxLength={writing ? 500 : 200}
               placeholder={
-                canAnswer
+                writing
+                  ? 'اكتب جوابك بصراحة… 🤫'
+                  : canAnswer && state.current?.kind === 'vote'
+                    ? 'اختار اسم من الفوق ☝️'
+                  : canAnswer
                   ? 'ولا اكتب جوابك بيدك…'
                   : state.phase === 'done'
                     ? friends
                       ? 'القعدة كملت 🤝'
                       : 'الموعد كمل 💘'
                     : state.phase === 'waiting'
-                      ? 'نستنّاو الشخص الآخر…'
+                      ? friends
+                        ? 'نستنّاو اللعبة تبدا…'
+                        : 'نستنّاو الشخص الآخر…'
+                      : state.wheel
+                        ? 'العجلة تدور… 🎡'
+                      : state.current?.kind === 'spin' && !state.current.myTurn
+                        ? `${state.current.chosen?.name ?? ''} ${g(state.current.chosen?.gender, 'يجاوب', 'تجاوب')}… 🤫`
                       : state.current?.myAnswer
-                        ? `نستنّاو ${partner?.name ?? 'الشخص الآخر'}…`
+                        ? group
+                          ? 'نستنّاو البقية…'
+                          : `نستنّاو ${partner?.name ?? 'الشخص الآخر'}…`
                         : 'السؤال الجاي في الطريق…'
               }
               aria-label="اكتب جوابك"
@@ -677,7 +879,7 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             />
             <button
               type="submit"
-              disabled={!canAnswer || !draft.trim() || sending}
+              disabled={!canAnswer || state.current?.kind === 'vote' || !draft.trim() || sending}
               className={cn(
                 'grid size-11 shrink-0 place-items-center rounded-full text-white transition active:scale-90 disabled:opacity-40',
                 friends ? 'bubble-friends' : 'bg-love',
@@ -707,20 +909,58 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
 
 /* ------------------------------- Chat pieces ------------------------------- */
 
-function FinaleIntro({ friends }: { friends: boolean }) {
+const SECTION_INTRO = {
+  vote: {
+    title: '🗳️ التصويت',
+    line: 'كل واحد يصوّت على واحد من صحابو. شكون صوّت لشكون ما يبان لحد، والنتيجة في التقرير السرّي برك 🤫',
+  },
+  spin: {
+    title: '🎡 العجلة',
+    line: 'العجلة تدور مرّة وحدة وتختار واحد، يجاوب على زوز أسئلة خاصّين بكلامو، وعندو جوكر 🃏 يبدّل بيه سؤال مرّة وحدة. الأجوبة ما يبانو كان في التقرير السرّي 🤫',
+  },
+} as const
+
+/** Shown before the first question of the finale, the votes and the wheel. */
+function SectionIntro({
+  kind,
+  friends,
+}: {
+  kind: RoomState['kinds'][number]
+  friends: boolean
+}) {
+  const intro =
+    kind === 'vote' || kind === 'spin'
+      ? SECTION_INTRO[kind]
+      : friends
+        ? { title: '🔥 آخر 5: الصراحة الكاملة', line: 'الأسئلة الأجرأ. ما تكذبش 😏' }
+        : {
+            title: '💍 آخر 5: الزواج',
+            line: 'أسئلة الراجل موش كيف المرا، والأجوبة تبان في التقرير الأخير برك 🤫',
+          }
   return (
     <div className="pt-4">
       <div className="mx-auto max-w-sm rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 text-center text-sm leading-relaxed">
-        <div className="font-display text-base font-semibold text-gold">
-          {friends ? '🔥 آخر 5: الصراحة الكاملة' : '💍 آخر 5: الزواج'}
-        </div>
-        <div className="mt-1 text-muted-foreground">
-          {friends
-            ? 'الأسئلة الأجرأ. ما تكذبش 😏'
-            : 'أسئلة الراجل موش كيف المرا، والأجوبة تبان في التقرير الأخير برك 🤫'}
-        </div>
+        <div className="font-display text-base font-semibold text-gold">{intro.title}</div>
+        <div className="mt-1 text-muted-foreground">{intro.line}</div>
       </div>
     </div>
+  )
+}
+
+function JokerPill({
+  chosen,
+  me,
+}: {
+  chosen: { id: number; name: string; gender: string | null } | null
+  me: number
+}) {
+  return (
+    <SystemPill>
+      🃏{' '}
+      {chosen?.id === me
+        ? 'استعملت الجوكر وبدّلت السؤال'
+        : `${chosen?.name ?? ''} ${g(chosen?.gender, 'استعمل', 'استعملت')} الجوكر و${g(chosen?.gender, 'بدّل', 'بدّلت')} السؤال`}
+    </SystemPill>
   )
 }
 
@@ -823,16 +1063,285 @@ function QuestionBubble({
 function TheirBubble({
   children,
   name,
+  showName,
 }: {
   children: React.ReactNode
   name?: string
+  // In a group, each bubble says who wrote it
+  showName?: boolean
 }) {
   return (
     <div className="pop-in flex items-end gap-2">
       <Avatar label={name?.[0] ?? '?'} />
       <div className="max-w-[75%] rounded-3xl rounded-es-md bg-secondary px-4 py-2.5">
+        {showName && name && (
+          <div className="mb-0.5 text-xs font-semibold text-sidi-blue">{name}</div>
+        )}
         {children}
       </div>
+    </div>
+  )
+}
+
+function GroupAvatars({ names }: { names: string[] }) {
+  if (names.length === 0) {
+    return (
+      <div className="bubble-friends grid size-10 place-items-center rounded-full text-white">🤝</div>
+    )
+  }
+  return (
+    <div className="flex -space-x-3 rtl:space-x-reverse">
+      {names.slice(0, 3).map((n, i) => (
+        <div
+          key={i}
+          className="bubble-friends grid size-9 place-items-center rounded-full border-2 border-card font-display text-sm font-bold text-white"
+        >
+          {n[0]}
+        </div>
+      ))}
+      {names.length > 3 && (
+        <div className="grid size-9 place-items-center rounded-full border-2 border-card bg-secondary text-xs font-bold">
+          +{names.length - 3}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** During a question in a group: who already answered (never what). */
+function AnsweredRow({
+  others,
+  answeredIds,
+}: {
+  others: RoomState['others']
+  answeredIds: number[]
+}) {
+  return (
+    <div className="pop-in flex flex-wrap justify-center gap-1.5 py-1">
+      {others.map((o) => {
+        const done = answeredIds.includes(o.id)
+        return (
+          <span
+            key={o.id}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs',
+              done ? 'bg-sidi-blue/15 text-sidi-blue' : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {done ? <Lock className="size-3" /> : '…'} {o.name}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Friends room before it starts: who is in, and the host's start button. */
+function Lobby({
+  state,
+  code,
+  token,
+  onStarted,
+}: {
+  state: RoomState
+  code: string
+  token: string
+  onStarted: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const isHost = state.me.role === 'host'
+  const host = state.others.find((o) => o.host)
+  const count = state.others.length + 1
+
+  async function start() {
+    setBusy(true)
+    try {
+      await startRoom({ data: { code, token, seen: getSeenQuestions() } })
+      onStarted()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'صار مشكل، عاود جرّب')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="surface pop-in mx-auto max-w-sm rounded-3xl p-5 text-center">
+      <p className="font-display font-semibold">
+        القروب · {count}/{state.maxPlayers}
+      </p>
+      <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+        {[{ id: state.me.id, name: state.me.name, online: true }, ...state.others].map((p) => (
+          <span
+            key={p.id}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1 text-sm"
+          >
+            <span
+              className={cn('size-2 rounded-full', p.online ? 'bg-emerald-400' : 'bg-muted-foreground/40')}
+            />
+            {p.id === state.me.id ? `${p.name} (إنتي)` : p.name}
+          </span>
+        ))}
+      </div>
+      {isHost ? (
+        <>
+          <Button
+            className="bubble-friends mt-5 h-12 w-full rounded-xl text-base font-semibold text-white"
+            disabled={busy || count < 2}
+            onClick={start}
+          >
+            {busy ? 'لحظة…' : `ابدا اللعبة (${count})`}
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {count < 2
+              ? 'استنّى صاحب واحد على الأقل يدخل.'
+              : 'كي تبدا، حتى حد ما عاد ينجم يدخل.'}
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">
+          نستنّاو {host?.name ?? 'اللي حلّ اللعبة'} {g(host?.gender, 'يبدا', 'تبدا')} اللعبة ⏳
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Wheel colours, in turn: Sidi Bou Said blue, wedding gold, Tunisian red
+const WHEEL_FILL = ['var(--sidi-blue)', 'var(--gold)', 'oklch(0.67 0.2 12)']
+const WHEEL_INK = ['white', 'oklch(0.25 0.04 260)', 'white']
+
+/**
+ * The wheel on a spin question, with everyone's name on it. The host turns it (or it turns by
+ * itself when the time runs out); the server picks who it lands on and every screen spins to them.
+ */
+function WheelCard({
+  wheel,
+  me,
+  host,
+  remaining,
+  code,
+  token,
+  onSpun,
+}: {
+  wheel: NonNullable<RoomState['wheel']>
+  me: RoomState['me']
+  host: RoomState['others'][number] | null
+  remaining: number
+  code: string
+  token: string
+  onSpun: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [turn, setTurn] = useState(0)
+  const [landed, setLanded] = useState(false)
+  const n = wheel.players.length
+  const seg = 360 / n
+  const chosenAt = wheel.chosen ? wheel.players.findIndex((p) => p.id === wheel.chosen!.id) : -1
+  // Five full turns, then the chosen name stops under the pointer
+  const target = chosenAt >= 0 ? 360 * 5 - (chosenAt + 0.5) * seg : 0
+
+  useEffect(() => {
+    if (!target) return
+    const id = requestAnimationFrame(() => setTurn(target))
+    return () => cancelAnimationFrame(id)
+  }, [target])
+
+  async function turnIt() {
+    setBusy(true)
+    try {
+      await spin({ data: { code, token } })
+      onSpun()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'صار مشكل، عاود جرّب')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const size = 240
+  const c = size / 2
+  const r = c - 6
+  const at = (deg: number, radius: number) => {
+    const a = (deg * Math.PI) / 180
+    return [c + radius * Math.sin(a), c - radius * Math.cos(a)] as const
+  }
+  // Two neighbours never share a colour, including the last and the first
+  const color = (k: number) => (k === n - 1 && n % 3 === 1 ? 1 : k % 3)
+
+  return (
+    <div className="surface pop-in mx-auto max-w-sm rounded-3xl p-5 text-center">
+      <div className="relative mx-auto w-fit">
+        {/* Pointer */}
+        <div className="absolute -top-1 left-1/2 z-10 -translate-x-1/2 border-x-[10px] border-t-[16px] border-x-transparent border-t-foreground drop-shadow" />
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          style={{
+            transform: `rotate(${turn}deg)`,
+            transition: 'transform 4.5s cubic-bezier(0.15, 0.85, 0.2, 1)',
+          }}
+          onTransitionEnd={() => setLanded(true)}
+          aria-label="العجلة"
+        >
+          {wheel.players.map((p, k) => {
+            const [x1, y1] = at(k * seg, r)
+            const [x2, y2] = at((k + 1) * seg, r)
+            const [tx, ty] = at((k + 0.5) * seg, r * 0.62)
+            return (
+              <g key={p.id}>
+                <path
+                  d={`M${c},${c} L${x1},${y1} A${r},${r} 0 ${seg > 180 ? 1 : 0} 1 ${x2},${y2} Z`}
+                  fill={WHEEL_FILL[color(k)]}
+                  stroke="var(--card)"
+                  strokeWidth="2"
+                />
+                <text
+                  x={tx}
+                  y={ty}
+                  fill={WHEEL_INK[color(k)]}
+                  fontSize={n > 5 ? 12 : 14}
+                  fontWeight="700"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  transform={`rotate(${(k + 0.5) * seg} ${tx} ${ty})`}
+                >
+                  {p.name.length > 10 ? `${p.name.slice(0, 9)}…` : p.name}
+                </text>
+              </g>
+            )
+          })}
+          <circle cx={c} cy={c} r="16" fill="var(--card)" stroke="var(--gold)" strokeWidth="3" />
+        </svg>
+      </div>
+
+      {wheel.spinning ? (
+        <p className="mt-4 min-h-6 font-display text-lg font-semibold">
+          {landed && wheel.chosen
+            ? wheel.chosen.id === me.id
+              ? '🎯 العجلة وقفت عليك!'
+              : `🎯 العجلة وقفت على ${wheel.chosen.name}`
+            : 'تدور… 🎡'}
+        </p>
+      ) : me.role === 'host' ? (
+        <>
+          <Button
+            className="bubble-gold mt-4 h-12 w-full rounded-xl text-base font-semibold"
+            disabled={busy}
+            onClick={turnIt}
+          >
+            {busy ? 'لحظة…' : 'دوّر العجلة 🎡'}
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            كان ما دوّرتهاش، تدور وحدها بعد {remaining} ثانية
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">
+          نستنّاو {host?.name ?? 'اللي حلّ اللعبة'} {g(host?.gender, 'يدوّر', 'تدوّر')} العجلة ⏳ ({remaining})
+        </p>
+      )}
     </div>
   )
 }
@@ -968,10 +1477,12 @@ function InviteCard({ code, friends }: { code: string; friends: boolean }) {
   return (
     <div className="surface pop-in mx-auto max-w-sm rounded-3xl p-5 text-center">
       <p className="font-display font-semibold">
-        {friends ? 'ابعث الدعوة لصاحبك' : 'ابعث الدعوة للشخص الآخر'}
+        {friends ? 'ابعث الدعوة لصحابك' : 'ابعث الدعوة للشخص الآخر'}
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        يدخل بالرابط، ولا يكتب الكود هذا في الصفحة الرئيسية
+        {friends
+          ? 'حتى 7 في القروب. يدخلو بالرابط، ولا يكتبو الكود هذا في الصفحة الرئيسية'
+          : 'يدخل بالرابط، ولا يكتب الكود هذا في الصفحة الرئيسية'}
       </p>
       <div
         dir="ltr"
@@ -998,7 +1509,7 @@ function InviteCard({ code, friends }: { code: string; friends: boolean }) {
             />
           ))}
         </span>
-        نستنّاو فيه يدخل…
+        {friends ? 'نستنّاو صحابك يدخلو…' : 'نستنّاو فيه يدخل…'}
       </div>
     </div>
   )
@@ -1024,6 +1535,8 @@ function ResultCard({ code, token }: { code: string; token: string }) {
       </BotBubble>
     )
   }
+
+  if (result.kind === 'group') return <GroupResult result={result} />
 
   const friends = result.mode === 'friends'
   const name = result.partnerName
@@ -1235,6 +1748,8 @@ function ResultCard({ code, token }: { code: string; token: string }) {
             </section>
           )}
 
+          <RoundsSection votes={result.votes} spins={result.spins} />
+
           {result.marriage && <MarriageSection report={result.marriage} />}
 
           <p className="text-center text-xs text-muted-foreground">
@@ -1253,6 +1768,254 @@ function ResultCard({ code, token }: { code: string; token: string }) {
         </div>
       </div>
     </div>
+  )
+}
+
+type GroupResultData = Extract<Result, { kind: 'group' }>
+
+/** The report for a friends room of 3 or more: who is close to who, and who answered like who. */
+function GroupResult({ result }: { result: GroupResultData }) {
+  const twin = result.friends[0]
+  const closest = result.pairs.slice(0, 3)
+  const farthest = result.pairs.length > 3 ? result.pairs[result.pairs.length - 1] : null
+  return (
+    <div className="space-y-3 pt-4">
+      <BotBubble>
+        كمّلنا 🎉 هذا التقرير متاعك على القروب، تشوفو إنت برك 🤫
+      </BotBubble>
+      <div className="surface pop-in mx-auto max-w-md overflow-hidden rounded-3xl">
+        <div className="bubble-friends relative px-6 pb-6 pt-7 text-center text-white">
+          <div className="absolute start-4 top-4 flex items-center gap-1 rounded-full bg-black/20 px-2.5 py-1 text-[11px]">
+            <Lock className="size-3" /> سرّي
+          </div>
+          <p className="text-sm opacity-90">توأمك في القروب</p>
+          <p className="mt-2 font-display text-3xl font-bold">{twin.name}</p>
+          <p className="mt-1 text-4xl font-bold tabular-nums">{twin.score}%</p>
+          <p className="mt-2 text-sm opacity-90">
+            جاوبتو نفس الجواب {twin.same} مرّة من {twin.together}
+          </p>
+        </div>
+
+        <div className="space-y-6 p-5">
+          <section>
+            <SectionTitle>💙 إنتي وصحابك</SectionTitle>
+            <ul className="mt-3 space-y-3">
+              {result.friends.map((f, i) => (
+                <li key={i}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold">{f.name}</span>
+                    <span className="tabular-nums text-muted-foreground">{f.score}%</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div className="bubble-friends h-full rounded-full" style={{ width: `${f.score}%` }} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {f.same} نفس الجواب من {f.together}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <SectionTitle>🔗 شكون قريب من شكون</SectionTitle>
+            <ul className="mt-3 space-y-2">
+              {closest.map((p, i) => (
+                <PairLine key={i} a={p.a.name} b={p.b.name} score={p.score} />
+              ))}
+            </ul>
+            {farthest && (
+              <>
+                <p className="mt-4 text-xs text-muted-foreground">والأبعد على بعضهم 😅</p>
+                <ul className="mt-2">
+                  <PairLine a={farthest.a.name} b={farthest.b.name} score={farthest.score} far />
+                </ul>
+              </>
+            )}
+          </section>
+
+          {result.titles.length > 0 && (
+            <section className="rounded-2xl bg-muted/60 p-4">
+              <SectionTitle>🏆 ألقاب القروب</SectionTitle>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {result.titles.map((t, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{t.name}</span>
+                    <span className="text-muted-foreground">{t.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {result.splits.length > 0 && (
+            <section>
+              <SectionTitle>👥 شكون اختار كيف شكون</SectionTitle>
+              <ul className="mt-2 space-y-2">
+                {result.splits.map((q) => (
+                  <li key={q.question} className="rounded-2xl bg-muted px-4 py-3 text-sm">
+                    <div className="text-muted-foreground">{q.question}</div>
+                    <ul className="mt-2 space-y-1.5">
+                      {q.groups.map((grp) => (
+                        <li key={grp.answer} className="rounded-xl bg-background/50 px-3 py-2">
+                          <div className="font-semibold">{grp.answer}</div>
+                          <div className="mt-0.5 text-xs text-sidi-blue">
+                            {grp.people.map((p) => p.name).join('، ')}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {result.agreed.length > 0 && (
+            <section>
+              <SectionTitle>🤝 كلكم متّفقين على</SectionTitle>
+              <ul className="mt-2 space-y-2">
+                {result.agreed.map((m) => (
+                  <li key={m.question} className="rounded-2xl bg-emerald-500/10 px-4 py-2.5 text-sm">
+                    <div className="text-muted-foreground">{m.question}</div>
+                    <div className="mt-0.5 font-semibold">{m.answer}</div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {result.alone.length > 0 && (
+            <section>
+              <SectionTitle>🙋 هنا كنت وحدك</SectionTitle>
+              <ul className="mt-2 space-y-2">
+                {result.alone.map((m) => (
+                  <li key={m.question} className="rounded-2xl bg-amber-500/10 px-4 py-2.5 text-sm">
+                    <div className="text-muted-foreground">{m.question}</div>
+                    <div className="mt-0.5 font-semibold">{m.answer}</div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {result.finale.length > 0 && (
+            <section className="rounded-2xl border border-gold/40 bg-gold/5 p-4">
+              <h3 className="font-display text-lg font-semibold text-gold">🔥 الصراحة الكاملة</h3>
+              <ul className="mt-3 space-y-2">
+                {result.finale.map((f) => (
+                  <li key={f.question} className="rounded-2xl bg-card px-4 py-2.5 text-sm">
+                    <div className="text-muted-foreground">{f.question}</div>
+                    <ul className="mt-1.5 space-y-1">
+                      {f.answers.map((a, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="shrink-0 font-semibold text-gold">{a.name}:</span>
+                          <span>{a.text ?? '⏱'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <RoundsSection votes={result.votes} spins={result.spins} />
+
+          <p className="text-center text-xs text-muted-foreground">
+            🤫 التقرير هذا ليك برك. كل واحد في القروب عندو تقرير متاعو.
+          </p>
+          <Button asChild className="bubble-friends h-11 w-full rounded-xl text-white">
+            <Link to="/">لعبة جديدة بأسئلة جديدة ✨</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The anonymous vote counts and the answers of the players the wheel picked. */
+function RoundsSection({ votes, spins }: Pick<Result, 'votes' | 'spins'>) {
+  if (!votes.length && !spins.length) return null
+  return (
+    <>
+      {votes.length > 0 && (
+        <section className="rounded-2xl border border-gold/40 bg-gold/5 p-4">
+          <h3 className="font-display text-lg font-semibold text-gold">🗳️ نتيجة التصويت</h3>
+          <p className="mt-1 text-xs text-muted-foreground">شكون صوّت لشكون يبقى سرّ 🤐</p>
+          <ul className="mt-3 space-y-2">
+            {votes.map((v) => {
+              const total = v.results.reduce((n, r) => n + r.votes, 0)
+              return (
+                <li key={v.question} className="rounded-2xl bg-card px-4 py-3 text-sm">
+                  <div className="text-muted-foreground">{v.question}</div>
+                  <ul className="mt-2 space-y-1.5">
+                    {v.results.map((r) => (
+                      <li key={r.name}>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate font-semibold">
+                            {r.votes === v.results[0].votes && '👑 '}
+                            {r.name}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
+                            {r.votes} {r.votes === 1 ? 'صوت' : 'أصوات'}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="bubble-gold h-full rounded-full"
+                            style={{ width: `${(r.votes / total) * 100}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
+      {spins.length > 0 && (
+        <section className="rounded-2xl border border-gold/40 bg-gold/5 p-4">
+          <h3 className="font-display text-lg font-semibold text-gold">🎡 أجوبة العجلة</h3>
+          <ul className="mt-3 space-y-2">
+            {spins.map((sp) => (
+              <li key={sp.question} className="rounded-2xl bg-card px-4 py-3 text-sm">
+                <div className="font-semibold text-gold">{sp.player?.name ?? '؟'}</div>
+                {sp.skipped && (
+                  <div className="mt-0.5 text-xs text-muted-foreground line-through opacity-70">
+                    🃏 {sp.skipped}
+                  </div>
+                )}
+                <div className="mt-0.5 text-muted-foreground">{sp.question}</div>
+                <div className="mt-1.5 rounded-xl bg-background/50 px-3 py-2">
+                  {sp.answer ?? (
+                    <em className="opacity-70">
+                      ⏱ {g(sp.player?.gender, 'ما لحقش يجاوب', 'ما لحقتش تجاوب')}
+                    </em>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  )
+}
+
+function PairLine({ a, b, score, far }: { a: string; b: string; score: number; far?: boolean }) {
+  return (
+    <li className="flex items-center gap-2 text-sm">
+      <span className="max-w-[35%] truncate font-semibold">{a}</span>
+      <span
+        className={cn('h-0.5 min-w-6 flex-1 rounded-full', far ? 'bg-muted-foreground/40' : 'bg-sidi-blue')}
+      />
+      <span className="max-w-[35%] truncate font-semibold">{b}</span>
+      <span className="w-10 shrink-0 text-end tabular-nums text-muted-foreground">{score}%</span>
+    </li>
   )
 }
 
@@ -1306,7 +2069,7 @@ const LEVEL_STYLE = {
 function MarriageSection({
   report,
 }: {
-  report: NonNullable<Result['marriage']>
+  report: NonNullable<Extract<Result, { kind: 'pair' }>['marriage']>
 }) {
   return (
     <section className="space-y-4 rounded-2xl border border-gold/40 bg-gold/5 p-4">
@@ -1370,7 +2133,7 @@ function MarriageProfileCard({
   profile,
 }: {
   heading: string
-  profile: NonNullable<Result['marriage']>['me']
+  profile: NonNullable<Extract<Result, { kind: 'pair' }>['marriage']>['me']
 }) {
   return (
     <details className="group rounded-2xl bg-card p-4">
