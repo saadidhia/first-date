@@ -9,6 +9,8 @@ import {
   getQuestion,
   pickQuestionIds,
   questionFor,
+  roundFor,
+  withoutVotes,
 } from './questions'
 
 describe('question bank', () => {
@@ -28,18 +30,34 @@ describe('question bank', () => {
     }
   })
 
-  it('gives each room 30 questions, the last 5 being the finale', () => {
-    for (const mode of ['date', 'friends'] as const) {
-      const ids = pickQuestionIds(mode)
-      expect(ids).toHaveLength(30)
-      expect(new Set(ids).size).toBe(30)
-      for (const id of ids.slice(0, 25)) {
-        expect(getQuestion(id)?.mode).toBe(mode)
-        expect(questionFor(id, 'male')?.finale).toBe(false)
-      }
-      for (const id of ids.slice(-5)) expect(questionFor(id, 'male')?.finale).toBe(true)
+  it('gives a date 30 questions, the last 5 on marriage', () => {
+    const ids = pickQuestionIds('date')
+    expect(ids).toHaveLength(30)
+    expect(new Set(ids).size).toBe(30)
+    for (const id of ids.slice(0, 25)) {
+      expect(getQuestion(id)?.mode).toBe('date')
+      expect(questionFor(id, 'male')?.finale).toBe(false)
     }
-    for (const id of pickQuestionIds('date').slice(-5)) expect(getMarriageQuestion(id)).toBeDefined()
+    for (const id of ids.slice(-5)) expect(getMarriageQuestion(id)).toBeDefined()
+  })
+
+  it('ends a friends room with 8 votes and 2 spins', () => {
+    const ids = pickQuestionIds('friends')
+    expect(ids).toHaveLength(30)
+    expect(new Set(ids).size).toBe(30)
+    for (const id of ids.slice(0, 20)) expect(getQuestion(id)?.mode).toBe('friends')
+    expect(ids.slice(20, 28).map((id) => roundFor(id)?.kind)).toEqual(Array(8).fill('vote'))
+    expect(ids.slice(28).map((id) => roundFor(id)?.kind)).toEqual(['spin', 'spin'])
+  })
+
+  it('swaps the votes for regular questions when only two friends play', () => {
+    const ids = pickQuestionIds('friends')
+    const two = withoutVotes(ids)
+    expect(two).toHaveLength(30)
+    expect(new Set(two).size).toBe(30)
+    expect(two.filter((id) => roundFor(id)?.kind === 'vote')).toHaveLength(0)
+    expect(two.slice(20, 28).every((id) => getQuestion(id)?.mode === 'friends')).toBe(true)
+    expect(two.slice(28)).toEqual(ids.slice(28))
   })
 
   it('prefers questions the host has not seen yet', () => {
@@ -54,12 +72,12 @@ describe('question bank', () => {
     expect(questionFor(q.id, 'male', 'male')?.text).not.toContain('{')
   })
 
-  it('builds a friends note with the finale answers', () => {
-    const ids = pickQuestionIds('friends')
-    const answers = ids.map((_, i) => ({ questionIndex: i, optionIndex: i % 3, text: 'x' }))
+  it('builds a friends note, leaving the spins out of the score', () => {
+    const ids = withoutVotes(pickQuestionIds('friends'))
+    const answers = ids.map((_, i) => ({ questionIndex: i, optionIndex: i < 28 ? i % 3 : null, text: 'x' }))
     const r = computeCompat(ids, answers, answers, { mode: 'friends', partnerGender: 'female' })
     expect(r.score).toBeGreaterThanOrEqual(80)
-    expect(r.finale).toHaveLength(5)
+    expect(r.answeredTogether).toBe(28)
     expect(r.topics.length).toBeGreaterThan(0)
   })
 })

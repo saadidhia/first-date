@@ -4,7 +4,7 @@ export type RoomMode = 'date' | 'friends'
 
 const OPTIONS: { value: RoomMode; label: string; hint: string; emoji: string }[] = [
   { value: 'date', label: 'First Date', hint: 'تعارف بين راجل ومرا، وفي الآخر الزواج', emoji: '💘' },
-  { value: 'friends', label: 'صحاب', hint: 'قدّاش تعرفو بعضكم بالحق؟', emoji: '🤝' },
+  { value: 'friends', label: 'صحاب', hint: 'من 2 لـ 7 صحاب: قدّاش تعرفو بعضكم بالحق؟', emoji: '🤝' },
 ]
 
 /** Chosen by the host before creating a room: it decides which question bank is used. */

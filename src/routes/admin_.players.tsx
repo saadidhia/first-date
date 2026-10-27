@@ -75,7 +75,7 @@ function GameList() {
   return (
     <div className="mt-8">
       <h1 className="font-display text-3xl font-bold">شكون لعب مع شكون</h1>
-      <p className="mt-1 text-sm text-muted-foreground">كل لعبة فيها زوز لاعبين مربوطين بخيط.</p>
+      <p className="mt-1 text-sm text-muted-foreground">اللاعبين اللي لعبو مع بعضهم مربوطين بخيط.</p>
 
       <section className="mt-6 rounded-3xl border border-border bg-card/85 p-5">
         <div className="flex flex-wrap items-center gap-2">
