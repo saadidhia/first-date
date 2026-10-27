@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { BarChart3, LogOut, MessageCircleHeart } from 'lucide-react'
+import { BarChart3, LogOut, MessageCircleHeart, Users } from 'lucide-react'
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <nav className="flex gap-1 rounded-2xl border border-border bg-card/60 p-1">
             <Tab to="/admin" icon={<BarChart3 className="size-4" />} label="الإحصائيات" />
+            <Tab to="/admin/players" icon={<Users className="size-4" />} label="اللاعبين" />
             <Tab to="/admin/messages" icon={<MessageCircleHeart className="size-4" />} label="الرسائل" />
           </nav>
           <span className="text-sm text-muted-foreground" dir="ltr">
@@ -60,7 +61,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Tab({ to, icon, label }: { to: '/admin' | '/admin/messages'; icon: React.ReactNode; label: string }) {
+function Tab({ to, icon, label }: { to: '/admin' | '/admin/players' | '/admin/messages'; icon: React.ReactNode; label: string }) {
   return (
     <Link
       to={to}
@@ -150,6 +151,36 @@ export function StatCard({
       </div>
       <div className="mt-3 font-display text-5xl font-bold tabular-nums">{value}</div>
       <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+    </div>
+  )
+}
+
+/** A row of toggle buttons, used for the filters above charts and lists. */
+export function Segmented<T extends string | number>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex rounded-xl border border-border bg-background/40 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'rounded-lg px-2.5 py-1 text-xs transition',
+            value === o.value ? 'bg-primary/20 font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   )
 }

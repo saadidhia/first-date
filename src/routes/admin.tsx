@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { CalendarDays, Clock, Gamepad2, Moon, Radio, Users } from 'lucide-react'
 
-import { AdminShell, StatCard } from '@/components/admin-shell'
+import { GameRow, PairLegend } from '@/components/admin-games'
+import { AdminShell, Segmented, StatCard } from '@/components/admin-shell'
 import { getAdminStats } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
 
@@ -82,7 +83,7 @@ function Dashboard() {
       </div>
       {stats && <GamesByMode games={stats.games} />}
       {stats && <DailySection days={stats.days} />}
-      {stats && <RecentList people={stats.recent} />}
+      {stats && <RecentList games={stats.recent} />}
       <p className="mt-4 text-xs text-muted-foreground">
         تتحدّث وحدها كل 10 ثواني
         {stats && ` · آخر تحديث ${new Date(stats.at).toLocaleTimeString('ar-TN')}`}
@@ -174,35 +175,6 @@ function DailySection({ days }: { days: Stats['days'] }) {
       <DailyChart days={days} range={range} mode={mode} metric={metric} />
       <DailyTable days={inRange} range={range} />
     </section>
-  )
-}
-
-function Segmented<T extends string | number>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[]
-  value: T
-  onChange: (v: T) => void
-}) {
-  return (
-    <div className="flex rounded-xl border border-border bg-background/40 p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            'rounded-lg px-2.5 py-1 text-xs transition',
-            value === o.value ? 'bg-primary/20 font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -408,47 +380,19 @@ function GamesByMode({ games }: { games: Stats['games'] }) {
   )
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  waiting: 'يستنّى الطرف الآخر',
-  intro: 'بداية',
-  question: 'يجاوب',
-  reveal: 'يجاوب',
-  done: 'كمّل',
-}
-
-function timeAgo(iso: string) {
-  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
-  if (s < 60) return `قبل ${s} ثانية`
-  return `قبل ${Math.round(s / 60)} دقيقة`
-}
-
-function RecentList({ people }: { people: Stats['recent'] }) {
+function RecentList({ games }: { games: Stats['recent'] }) {
   return (
     <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
-      <h2 className="font-display text-lg font-semibold">شكون كان en ligne في آخر ساعة</h2>
-      {people.length === 0 ? (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg font-semibold">شكون كان en ligne في آخر ساعة</h2>
+        <PairLegend />
+      </div>
+      {games.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">حتى حد ما دخل في آخر ساعة.</p>
       ) : (
-        <ul className="mt-3 divide-y divide-border">
-          {people.map((p) => (
-            <li key={p.id} className="flex items-center gap-3 py-2.5 text-sm">
-              <span
-                className={cn(
-                  'size-2.5 shrink-0 rounded-full',
-                  p.online ? 'bg-emerald-400' : 'bg-muted-foreground/40',
-                )}
-                title={p.online ? 'en ligne توّا' : 'خرج'}
-              />
-              <span className="min-w-0 flex-1 truncate font-semibold">
-                {p.gender === 'female' ? '👰' : p.gender === 'male' ? '🤵' : '👤'} {p.name}
-              </span>
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                لعبة <span dir="ltr" className="font-mono">{p.code}</span> · {PHASE_LABEL[p.phase] ?? p.phase}
-              </span>
-              <span className={cn('text-xs tabular-nums', p.online ? 'text-emerald-400' : 'text-muted-foreground')}>
-                {p.online ? 'en ligne توّا' : timeAgo(p.lastSeenAt)}
-              </span>
-            </li>
+        <ul className="mt-2 divide-y divide-border">
+          {games.map((g) => (
+            <GameRow key={g.id} game={g} />
           ))}
         </ul>
       )}
