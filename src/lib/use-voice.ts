@@ -25,6 +25,20 @@ const CONNECT_MS = 15_000
 const SPEAK_LEVEL = 0.025
 const SPEAK_HOLD_MS = 450
 
+// In-app browsers (Instagram, Facebook, TikTok, Snapchat) often refuse the mic
+const IN_APP = /Instagram|FBAN|FBAV|FB_IAB|TikTok|musical_ly|Snapchat/i
+const OPEN_IN_BROWSER = 'الميكرو ما يخدمش هوني. حلّ اللعبة في Chrome ولا Safari باش تحكي 🎙️'
+
+function micError(e: unknown) {
+  const name = e instanceof DOMException ? e.name : ''
+  const inApp = IN_APP.test(navigator.userAgent)
+  if (name === 'NotAllowedError' || name === 'SecurityError')
+    return inApp ? OPEN_IN_BROWSER : 'لازم تعطي الإذن للميكرو باش تحكي 🎙️'
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'ما لقيناش ميكرو في الجهاز هذا'
+  if (name === 'NotReadableError') return 'الميكرو خدّام في تطبيق آخر، سكّرو وعاود جرّب'
+  return inApp ? OPEN_IN_BROWSER : 'ما نجّمناش نحلّو الميكرو'
+}
+
 export function useVoice(code: string, token: string) {
   const [open, setOpen] = useState(true)
   const [closesAt, setClosesAt] = useState<number | null>(null)
@@ -56,6 +70,15 @@ export function useVoice(code: string, token: string) {
       .map(([id]) => id)
       .sort((a, b) => a - b)
     setConnected((old) => (old.join() === ids.join() ? old : ids))
+  }, [])
+
+  // A browser can refuse to start the sound without a tap (mostly iPhones): it starts on the next one
+  const playOnTap = useCallback(() => {
+    const play = () => {
+      ctx.current?.resume().catch(() => {})
+      for (const p of peers.current.values()) p.audio.play().catch(() => {})
+    }
+    document.addEventListener('pointerdown', play, { once: true })
   }, [])
 
   const send = useCallback((to: number, data: Signal) => {
@@ -91,12 +114,17 @@ export function useVoice(code: string, token: string) {
       pc.ontrack = (e) => {
         const remote = e.streams[0] ?? new MediaStream([e.track])
         audio.srcObject = remote
-        audio.play().catch(() => {})
+        audio.play().catch(playOnTap)
+        // Only for showing who talks: the sound itself goes through the audio element
         if (ctx.current) {
-          const level = ctx.current.createAnalyser()
-          level.fftSize = 512
-          ctx.current.createMediaStreamSource(remote).connect(level)
-          peer.level = level
+          try {
+            const level = ctx.current.createAnalyser()
+            level.fftSize = 512
+            ctx.current.createMediaStreamSource(remote).connect(level)
+            peer.level = level
+          } catch {
+            // Then their talking is read from the server instead
+          }
         }
       }
       pc.onconnectionstatechange = () => {
@@ -106,7 +134,7 @@ export function useVoice(code: string, token: string) {
       peers.current.set(id, peer)
       return peer
     },
-    [send, closePeer, refreshConnected],
+    [send, closePeer, refreshConnected, playOnTap],
   )
 
   const call = useCallback(
@@ -167,6 +195,7 @@ export function useVoice(code: string, token: string) {
     let stop = false
     let busy = false
     let again = false
+    let resend = true
     let timer: number | undefined
 
     const tick = async () => {
@@ -177,8 +206,8 @@ export function useVoice(code: string, token: string) {
       }
       busy = true
       let closed = false
+      const out = outbox.current.splice(0, 60)
       try {
-        const out = outbox.current.splice(0, 60)
         const res = await voiceSync({
           data: {
             code,
@@ -215,9 +244,13 @@ export function useVoice(code: string, token: string) {
           }
           for (const id of ids) if (res.me < id && !peers.current.has(id)) await call(id)
         }
+        resend = true
         setError(null)
       } catch {
-        // A missed sync is retried on the next tick
+        // A missed sync is retried on the next tick, with the messages it didn't get to send
+        // (once: a message the server refuses must not block the ones after it)
+        if (inCallRef.current && resend) outbox.current.unshift(...out)
+        resend = false
       } finally {
         busy = false
         if (!stop && !closed) {
@@ -282,36 +315,55 @@ export function useVoice(code: string, token: string) {
 
   const join = useCallback(async () => {
     if (inCallRef.current || joining) return
+    if (!window.isSecureContext) {
+      setError('الميكرو يخدم كان كي تحلّ اللعبة بـ https://')
+      return
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === 'undefined') {
-      setError('المتصفّح هذا ما يخلّيكش تحكي. حلّ اللعبة في Chrome ولا Safari.')
+      setError(
+        IN_APP.test(navigator.userAgent)
+          ? OPEN_IN_BROWSER
+          : 'المتصفّح هذا ما يخلّيكش تحكي. حلّ اللعبة في Chrome ولا Safari.',
+      )
       return
     }
     setJoining(true)
     setError(null)
+    // Made during the tap itself: iPhones only let sound start from one. It only measures who
+    // is talking, so the call works without it.
+    let ac: AudioContext | null = null
+    try {
+      const AC = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      ac = AC ? new AC() : null
+      ac?.resume().catch(() => {})
+    } catch {
+      // No sound meter on this browser
+    }
     try {
       const mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       })
       stream.current = mic
-      const ac = new AudioContext()
-      await ac.resume().catch(() => {})
-      ctx.current = ac
-      const level = ac.createAnalyser()
-      level.fftSize = 512
-      ac.createMediaStreamSource(mic).connect(level)
-      myLevel.current = level
+      if (ac) {
+        try {
+          const level = ac.createAnalyser()
+          level.fftSize = 512
+          ac.createMediaStreamSource(mic).connect(level)
+          myLevel.current = level
+          ctx.current = ac
+        } catch {
+          ac.close().catch(() => {})
+        }
+      }
       mutedRef.current = false
       setMuted(false)
       inCallRef.current = true
       setInCall(true)
       kick.current()
     } catch (e) {
-      setError(
-        e instanceof DOMException && e.name === 'NotAllowedError'
-          ? 'لازم تعطي الإذن للميكرو باش تحكي 🎙️'
-          : 'ما نجّمناش نحلّو الميكرو',
-      )
+      ac?.close().catch(() => {})
+      setError(micError(e))
     } finally {
       setJoining(false)
     }
