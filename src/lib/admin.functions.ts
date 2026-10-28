@@ -3,8 +3,9 @@ import { and, asc, desc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
-import { activityMinutes, players, rooms } from '../../db/schema'
+import { activityMinutes, answers, players, rooms } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
+import { type AnswerLite, computeCompat } from './compat'
 
 // A player counts as "using the site now" if their room polled within this window
 const ACTIVE_MS = 20_000
@@ -12,6 +13,8 @@ const HOUR_MS = 60 * 60 * 1000
 // Days in the daily table and chart, counted in Tunisia time
 const TZ = sql.raw(`'Africa/Tunis'`)
 const DAYS = 90
+// A pair needs this many questions answered by both before their match % means anything
+const MIN_TOGETHER = 3
 
 /** The signed-in admin, or null. */
 export const getAdminUser = createServerFn({ method: 'GET' }).handler(async () => {
@@ -41,11 +44,11 @@ export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () 
     .select({ lastHour: sql<number>`count(*)::int` })
     .from(players)
     .where(gt(players.lastSeenAt, new Date(Date.now() - HOUR_MS)))
-  // Every game where someone polled in the last hour, most recent first
+  // Every game where someone polled in the last hour, newest game first (a stable order, so
+  // rows don't jump around on each refresh)
   const hourAgo = new Date(Date.now() - HOUR_MS)
   const recent = await listGames(
     sql`exists (select 1 from ${players} where ${players.roomId} = ${rooms.id} and ${players.lastSeenAt} > ${hourAgo})`,
-    'seen',
     100,
   )
   return {
@@ -54,15 +57,58 @@ export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () 
     lastHour,
     today: await emptyToday(),
     games: await gamesByMode(),
+    match: await matchStats(),
     days: await dailyStats(),
     recent,
     at: new Date().toISOString(),
   }
 })
 
+type Mode = 'date' | 'friends'
+const asMode = (m: string): Mode => (m === 'friends' ? 'friends' : 'date')
+
+/**
+ * How well the players of a game match, the same score they see in their report: for a couple
+ * their compatibility, for friends every pair's score and the group average. computeCompat is
+ * nearly symmetric, so both directions are averaged. Null until they answered enough together.
+ */
+function matchOf(mode: Mode, qids: string[], members: { id: number; name: string; answers: AnswerLite[] }[]) {
+  const pairs: { a: string; b: string; score: number }[] = []
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const [a, b] = [members[i], members[j]]
+      const ab = computeCompat(qids, a.answers, b.answers, { mode })
+      if (ab.answeredTogether < MIN_TOGETHER) continue
+      const ba = computeCompat(qids, b.answers, a.answers, { mode })
+      pairs.push({ a: a.name, b: b.name, score: Math.round((ab.score + ba.score) / 2) })
+    }
+  }
+  if (!pairs.length) return null
+  pairs.sort((x, y) => y.score - x.score)
+  return { score: Math.round(pairs.reduce((n, p) => n + p.score, 0) / pairs.length), pairs }
+}
+
+/** Every answer of these rooms, by room and player. */
+async function answersOf(roomIds: number[]) {
+  const rows = roomIds.length
+    ? await db
+        .select({
+          roomId: answers.roomId,
+          playerId: answers.playerId,
+          questionIndex: answers.questionIndex,
+          optionIndex: answers.optionIndex,
+          text: answers.text,
+        })
+        .from(answers)
+        .where(inArray(answers.roomId, roomIds))
+    : []
+  const byPlayer = new Map<number, AnswerLite[]>()
+  for (const a of rows) byPlayer.set(a.playerId, [...(byPlayer.get(a.playerId) ?? []), a])
+  return (playerId: number) => byPlayer.get(playerId) ?? []
+}
+
 /** Games with all their players (host first), newest first. */
-async function listGames(where: SQL | undefined, order: 'created' | 'seen', limit: number) {
-  const lastSeen = sql`(select max(${players.lastSeenAt}) from ${players} where ${players.roomId} = ${rooms.id})`
+async function listGames(where: SQL | undefined, limit: number) {
   const rows = await db
     .select({
       id: rooms.id,
@@ -71,11 +117,12 @@ async function listGames(where: SQL | undefined, order: 'created' | 'seen', limi
       phase: rooms.phase,
       currentIndex: rooms.currentIndex,
       questions: sql<number>`jsonb_array_length(${rooms.questionIds})::int`,
+      questionIds: rooms.questionIds,
       createdAt: rooms.createdAt,
     })
     .from(rooms)
     .where(where)
-    .orderBy(order === 'seen' ? desc(lastSeen) : desc(rooms.createdAt))
+    .orderBy(desc(rooms.createdAt), desc(rooms.id))
     .limit(limit)
   const people = rows.length
     ? await db
@@ -90,12 +137,16 @@ async function listGames(where: SQL | undefined, order: 'created' | 'seen', limi
         .where(inArray(players.roomId, rows.map((r) => r.id)))
         .orderBy(asc(players.id))
     : []
-  return rows.map((r) => ({
+  const answersFor = await answersOf(rows.map((r) => r.id))
+  return rows.map(({ questionIds, ...r }) => {
+    const roster = people.filter((p) => p.roomId === r.id)
+    const mode = asMode(r.mode)
+    return {
     ...r,
-    mode: r.mode === 'friends' ? ('friends' as const) : ('date' as const),
+    mode,
     createdAt: r.createdAt.toISOString(),
-    players: people
-      .filter((p) => p.roomId === r.id)
+    match: matchOf(mode, questionIds, roster.map((p) => ({ id: p.id, name: p.name, answers: answersFor(p.id) }))),
+    players: roster
       .map((p) => ({
         id: p.id,
         name: p.name,
@@ -103,7 +154,8 @@ async function listGames(where: SQL | undefined, order: 'created' | 'seen', limi
         online: Date.now() - p.lastSeenAt.getTime() < ACTIVE_MS,
         lastSeenAt: p.lastSeenAt.toISOString(),
       })),
-  }))
+    }
+  })
 }
 
 export type AdminGame = Awaited<ReturnType<typeof listGames>>[number]
@@ -128,7 +180,7 @@ export const getAdminGames = createServerFn({ method: 'GET' })
       )
     }
     // One extra row tells the page whether there are more to load
-    const games = await listGames(and(...conditions), 'created', data.limit + 1)
+    const games = await listGames(and(...conditions), data.limit + 1)
     return { games: games.slice(0, data.limit), more: games.length > data.limit }
   })
 
@@ -229,4 +281,50 @@ async function dailyStats() {
     friendsRooms: f.get(day) ?? 0,
     activeMinutes: m.get(day) ?? null,
   }))
+}
+
+// Match % buckets, the same cut-offs as the verdict in the players' report
+const BUCKETS = [80, 65, 50, 0] as const
+let matchCache: { at: number; value: Awaited<ReturnType<typeof computeMatchStats>> } | null = null
+
+/** Average match % of finished games, couples and friends apart. Cached for a minute. */
+async function matchStats() {
+  if (!matchCache || Date.now() - matchCache.at > 60_000)
+    matchCache = { at: Date.now(), value: await computeMatchStats() }
+  return matchCache.value
+}
+
+async function computeMatchStats() {
+  const done = await db
+    .select({ id: rooms.id, mode: rooms.mode, questionIds: rooms.questionIds })
+    .from(rooms)
+    .where(eq(rooms.phase, 'done'))
+  const roster = done.length
+    ? await db
+        .select({ id: players.id, roomId: players.roomId, name: players.name })
+        .from(players)
+        .where(inArray(players.roomId, done.map((r) => r.id)))
+    : []
+  const answersFor = await answersOf(done.map((r) => r.id))
+  const scores = { date: [] as number[], friends: [] as number[] }
+  for (const r of done) {
+    const mode = asMode(r.mode)
+    const members = roster.filter((p) => p.roomId === r.id).map((p) => ({ ...p, answers: answersFor(p.id) }))
+    const m = matchOf(mode, r.questionIds, members)
+    if (!m) continue
+    // A couple counts once; a group counts each of its pairs
+    if (mode === 'date') scores.date.push(m.score)
+    else scores.friends.push(...m.pairs.map((p) => p.score))
+  }
+  const summary = (list: number[]) => ({
+    count: list.length,
+    average: list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : null,
+    best: list.length ? Math.max(...list) : null,
+    buckets: BUCKETS.map((from, i) => ({
+      from,
+      to: i === 0 ? 100 : BUCKETS[i - 1] - 1,
+      count: list.filter((s) => s >= from && (i === 0 || s < BUCKETS[i - 1])).length,
+    })),
+  })
+  return { date: summary(scores.date), friends: summary(scores.friends) }
 }
