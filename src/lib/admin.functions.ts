@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
-import { activityMinutes, answers, players, rooms } from '../../db/schema'
+import { activityMinutes, answers, players, rooms, voiceMembers } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 import { type AnswerLite, computeCompat } from './compat'
 
@@ -327,4 +327,40 @@ async function computeMatchStats() {
     })),
   })
   return { date: summary(scores.date), friends: summary(scores.friends) }
+}
+
+// Same window as the voice chat: a member who stopped syncing for longer has left the call
+const VOICE_MS = 7000
+
+/** Who is on the mic right now. Polled every 2 seconds by the dashboard, apart from the heavier stats. */
+export const getAdminVoice = createServerFn({ method: 'GET' }).handler(async () => {
+  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+  return voiceNow()
+})
+
+/** Who is in a voice call right now, by game: muted or not, and talking or not. */
+async function voiceNow() {
+  const rows = await db
+    .select({
+      roomId: rooms.id,
+      code: rooms.code,
+      mode: rooms.mode,
+      playerId: players.id,
+      name: players.name,
+      gender: players.gender,
+      muted: voiceMembers.muted,
+      speaking: voiceMembers.speaking,
+    })
+    .from(voiceMembers)
+    .innerJoin(players, eq(voiceMembers.playerId, players.id))
+    .innerJoin(rooms, eq(voiceMembers.roomId, rooms.id))
+    .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
+    .orderBy(desc(rooms.createdAt), asc(players.id))
+  const calls = new Map<number, { code: string; mode: Mode; members: { id: number; name: string; gender: string | null; muted: boolean; speaking: boolean }[] }>()
+  for (const r of rows) {
+    const call = calls.get(r.roomId) ?? { code: r.code, mode: asMode(r.mode), members: [] }
+    call.members.push({ id: r.playerId, name: r.name, gender: r.gender, muted: r.muted, speaking: r.speaking })
+    calls.set(r.roomId, call)
+  }
+  return [...calls.values()]
 }
