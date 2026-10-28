@@ -24,8 +24,12 @@ type Peer = {
 
 const SYNC_IN_CALL_MS = 800
 const SYNC_IDLE_MS = 2500
-// A connection that isn't up after this long is dropped and tried again
-const CONNECT_MS = 15_000
+// A connection that isn't up after this long is dropped and tried again (sooner when the
+// offer got no answer at all); slow phone networks can take a while to find a way through
+const CONNECT_MS = 40_000
+const ANSWER_MS = 10_000
+// The player waiting for an offer asks for one again this often while it doesn't come
+const HELLO_MS = 5000
 const SPEAK_LEVEL = 0.025
 const SPEAK_HOLD_MS = 450
 
@@ -63,6 +67,8 @@ export function useVoice(code: string, token: string) {
   const mutedRef = useRef(true)
   const speakingRef = useRef(false)
   const since = useRef(0)
+  // Signals sent to me before this page joined the call are for an older page: skipped
+  const primed = useRef(false)
   const outbox = useRef<{ to: number; data: Signal }[]>([])
   const peers = useRef(new Map<number, Peer>())
   const stream = useRef<MediaStream | null>(null)
@@ -163,6 +169,16 @@ export function useVoice(code: string, token: string) {
 
   const onSignal = useCallback(
     async (from: number, s: Signal) => {
+      // They opened the page again and wait for an offer, while I may still hold a connection
+      // to their old page: start a new one (unless I just did)
+      if (s.type === 'hello') {
+        const p = peers.current.get(from)
+        if (me.current < from && (!p || Date.now() - p.startedAt > HELLO_MS)) {
+          closePeer(from)
+          await call(from)
+        }
+        return
+      }
       if (s.type === 'offer' && s.sdp) {
         // A new offer always starts a fresh connection
         closePeer(from)
@@ -191,11 +207,12 @@ export function useVoice(code: string, token: string) {
         else peer.pending.push(s.candidate)
       }
     },
-    [closePeer, makePeer, send],
+    [closePeer, makePeer, send, call],
   )
 
   const hangUp = useCallback(() => {
     inCallRef.current = false
+    primed.current = false
     speakingRef.current = false
     for (const id of [...peers.current.keys()]) closePeer(id)
     for (const t of stream.current?.getTracks() ?? []) t.stop()
@@ -220,6 +237,8 @@ export function useVoice(code: string, token: string) {
     let again = false
     let resend = true
     let timer: number | undefined
+    // When I last asked each player for an offer
+    const hello = new Map<number, number>()
 
     const tick = async () => {
       window.clearTimeout(timer)
@@ -230,6 +249,7 @@ export function useVoice(code: string, token: string) {
       busy = true
       let closed = false
       const out = outbox.current.splice(0, 60)
+      const listening = inCallRef.current
       try {
         const res = await voiceSync({
           data: {
@@ -252,9 +272,11 @@ export function useVoice(code: string, token: string) {
           setOpen(false)
           if (inCallRef.current) hangUp()
         }
+        const fresh = primed.current
+        if (listening) primed.current = true
         for (const s of res.signals) {
           since.current = s.id
-          if (inCallRef.current) await onSignal(s.from, s.data).catch(() => {})
+          if (inCallRef.current && fresh) await onSignal(s.from, s.data).catch(() => {})
         }
         const others = res.members.filter((m) => m.id !== res.me)
         serverSpeaking.current = new Set(others.filter((m) => m.speaking).map((m) => m.id))
@@ -262,10 +284,19 @@ export function useVoice(code: string, token: string) {
         if (inCallRef.current) {
           const ids = new Set(others.map((m) => m.id))
           for (const [id, p] of peers.current) {
-            const stuck = p.pc.connectionState !== 'connected' && Date.now() - p.startedAt > CONNECT_MS
+            const age = Date.now() - p.startedAt
+            const stuck =
+              p.pc.connectionState !== 'connected' &&
+              (age > CONNECT_MS || (p.pc.signalingState === 'have-local-offer' && age > ANSWER_MS))
             if (!ids.has(id) || (stuck && res.me < id)) closePeer(id)
           }
-          for (const id of ids) if (res.me < id && !peers.current.has(id)) await call(id)
+          for (const id of ids) {
+            if (res.me < id && !peers.current.has(id)) await call(id)
+            else if (id < res.me && !peers.current.has(id) && Date.now() - (hello.get(id) ?? 0) > HELLO_MS) {
+              hello.set(id, Date.now())
+              send(id, { type: 'hello', sid: crypto.randomUUID() })
+            }
+          }
         }
         resend = true
         setError(null)
@@ -298,7 +329,7 @@ export function useVoice(code: string, token: string) {
       document.removeEventListener('visibilitychange', onVisible)
       hangUp()
     }
-  }, [code, token, onSignal, call, closePeer, hangUp])
+  }, [code, token, onSignal, call, closePeer, hangUp, send])
 
   // Who is talking: measured on the audio itself for me and the players I'm connected to,
   // and taken from the server for the others
