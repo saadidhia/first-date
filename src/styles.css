@@ -251,6 +251,16 @@ code {
   }
 }
 
+/* The answer bars of a group reveal fill up from the start side (right, in RTL) */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bar-grow {
+  transform-origin: right;
+  animation: bar-grow 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @keyframes typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-4px); opacity: 1; }
@@ -269,6 +279,7 @@ code {
 
 @media (prefers-reduced-motion: reduce) {
   .pop-in,
+  .bar-grow,
   .heart-float,
   .typing-dot {
     animation: none;

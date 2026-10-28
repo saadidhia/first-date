@@ -13,6 +13,7 @@ import {
 
 import { GenderPicker } from '@/components/gender-picker'
 import { Logo } from '@/components/logo'
+import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -551,6 +552,7 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
               />
             ))}
           </div>
+          <VoiceBar code={code} token={token} me={state.me} others={others} />
         </header>
 
         {/* Messages */}
@@ -645,6 +647,8 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                     </TheirBubble>
                   )}
                 </>
+              ) : group && !h.marriage && h.options.length > 0 ? (
+                <RevealCard item={h} me={state.me} others={others} />
               ) : (
                 <>
                   {h.theirs.map((t) => {
@@ -1344,6 +1348,138 @@ function WheelCard({
       )}
     </div>
   )
+}
+
+type HistoryItem = RoomState['history'][number]
+type Person = { id: number; name: string; gender: string | null }
+
+/**
+ * A group question once everyone answered: each option with who picked it, a bar for how many,
+ * replies in their own words, and a one-line verdict on how the group split.
+ */
+function RevealCard({ item, me, others }: { item: HistoryItem; me: Person; others: Person[] }) {
+  const picks = [
+    { ...me, self: true, option: item.myOption, text: item.mine },
+    ...others.map((o) => {
+      const t = item.theirs.find((x) => x.id === o.id)
+      return { ...o, self: false, option: t?.option ?? null, text: t?.text ?? null }
+    }),
+  ]
+  const answered = picks.filter((p) => p.text != null)
+  const byOption = item.options.map((_, i) => answered.filter((p) => p.option === i))
+  const ownWords = answered.filter((p) => p.option == null)
+  const missing = picks.filter((p) => p.text == null)
+  const top = Math.max(0, ...byOption.map((b) => b.length))
+  const verdict = revealVerdict(byOption, ownWords.length, answered.length, picks.length)
+  // Names pop in one after the other, option by option
+  const order = [...byOption.flat(), ...ownWords]
+  const delayOf = (id: number) => 250 + order.findIndex((p) => p.id === id) * 70
+
+  return (
+    <div
+      className={cn(
+        'pop-in surface mx-auto w-full max-w-md space-y-2 rounded-3xl border p-3',
+        item.finale ? 'border-gold/40' : 'border-sidi-blue/30',
+      )}
+    >
+      {verdict && <div className="text-center text-sm font-semibold">{verdict}</div>}
+      {item.options.map((o, i) => {
+        const who = byOption[i]
+        // The most picked option, once at least two people agree on it
+        const lead = top > 1 && who.length === top
+        const mine = item.myOption === i
+        return (
+          <div
+            key={i}
+            className={cn(
+              'relative overflow-hidden rounded-2xl border px-3 py-2',
+              lead ? 'border-sidi-blue/60' : 'border-border',
+              who.length === 0 && 'opacity-55',
+            )}
+          >
+            {who.length > 0 && (
+              <div
+                className={cn('bar-grow absolute inset-y-0 start-0', lead ? 'bg-sidi-blue/20' : 'bg-muted/60')}
+                style={{ width: `${(who.length / picks.length) * 100}%`, animationDelay: `${i * 120}ms` }}
+              />
+            )}
+            <div className="relative flex items-center gap-2">
+              <span
+                className={cn(
+                  'grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold',
+                  mine ? 'bubble-friends text-white' : 'bg-muted text-muted-foreground',
+                )}
+              >
+                {LETTERS[i]}
+              </span>
+              <span className="flex-1 text-sm">{o}</span>
+              {lead && <span title="الأغلبية">👑</span>}
+              <span className="text-xs font-semibold tabular-nums text-muted-foreground">{who.length}</span>
+            </div>
+            {who.length > 0 && (
+              <div className="relative mt-1.5 flex flex-wrap gap-1 ps-8">
+                {who.map((p) => (
+                  <NameChip key={p.id} person={p} self={p.self} delay={delayOf(p.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {ownWords.map((p) => (
+        <div key={p.id} className="pop-in flex items-start gap-2 rounded-2xl bg-secondary px-3 py-2 text-sm">
+          <NameChip person={p} self={p.self} delay={delayOf(p.id)} />
+          <span className="pt-0.5">✍️ {p.text}</span>
+        </div>
+      ))}
+      {missing.length > 0 && (
+        <div className="text-center text-xs text-muted-foreground">
+          ⏱ ما {missing.length > 1 ? 'لحقوش' : missing[0].self ? 'لحقتش' : g(missing[0].gender, 'لحقش', 'لحقتش')}:{' '}
+          {missing.map((p) => (p.self ? 'إنتي' : p.name)).join('، ')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NameChip({ person, self, delay }: { person: Person; self: boolean; delay: number }) {
+  return (
+    <span
+      className={cn(
+        'pop-in inline-flex items-center gap-1 rounded-full py-0.5 pe-2 ps-0.5 text-xs font-semibold',
+        self ? 'bubble-friends text-white' : 'bg-background/80 text-foreground',
+      )}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="grid size-4 place-items-center rounded-full bg-white/15 text-[10px]">{person.name[0]}</span>
+      {self ? 'إنتي' : person.name}
+    </span>
+  )
+}
+
+/** One line on how the group split on a question. */
+function revealVerdict(
+  byOption: (Person & { self: boolean })[][],
+  ownWords: number,
+  answered: number,
+  everyone: number,
+) {
+  const used = byOption.filter((b) => b.length > 0)
+  if (answered < 2) return null
+  if (used.length === 1 && used[0].length === everyone) return '🤝 القروب الكل متّفق! نفس الجواب 🎉'
+  if (used.length === 1 && used[0].length === answered) return '🤝 اللي جاوبو الكل متّفقين'
+  // A reply in someone's own words counts as a side of its own
+  if (answered >= 3 && used.length + ownWords === answered) return '🌪️ كل واحد في جهة!'
+  const alone = used.find((b) => b.length === 1)
+  const rest = used.find((b) => b.length === answered - 1)
+  if (answered >= 3 && alone && rest) {
+    const p = alone[0]
+    return p.self ? '😅 إنتي وحدك ضد القروب الكل' : `👀 ${p.name} ${g(p.gender, 'وحدو', 'وحدها')} ضد القروب`
+  }
+  const counts = used.map((b) => b.length).sort((a, b) => b - a)
+  return ownWords
+    ? `⚖️ القروب تقسم، و${ownWords > 1 ? `${ownWords} جاوبو` : 'واحد جاوب'} بكلامو`
+    : `⚖️ القروب تقسم: ${counts.join(' ضد ')}`
 }
 
 function MyBubble({

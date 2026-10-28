@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgTable,
   serial,
   text,
@@ -23,6 +24,8 @@ export const rooms = pgTable('rooms', {
   spins: jsonb().$type<Record<string, number>>().notNull().default({}),
   // The joker the spun player can use once: a question swapped for another one
   joker: jsonb().$type<{ index: number; skipped: string }>(),
+  // When the game finished: the voice chat stays open for a few minutes after it
+  endedAt: timestamp('ended_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
@@ -83,6 +86,52 @@ export const events = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index('events_room_idx').on(t.roomId)],
+)
+
+// Who is in the room's voice chat. A row counts while seen_at is recent; `speaking` lets the
+// players who didn't join see who is talking
+export const voiceMembers = pgTable(
+  'voice_members',
+  {
+    playerId: integer('player_id')
+      .primaryKey()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    muted: boolean().notNull().default(false),
+    speaking: boolean().notNull().default(false),
+    seenAt: timestamp('seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('voice_members_room_idx').on(t.roomId)],
+)
+
+export type VoiceSignal = {
+  type: 'offer' | 'answer' | 'ice'
+  sid: string
+  sdp?: string
+  candidate?: { candidate?: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null }
+}
+
+// WebRTC setup messages (offer, answer, ICE candidates) passed between two players of a room.
+// The audio itself goes straight between the players; rows are deleted after a couple of minutes.
+export const voiceSignals = pgTable(
+  'voice_signals',
+  {
+    id: serial().primaryKey(),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    fromId: integer('from_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    toId: integer('to_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    data: jsonb().$type<VoiceSignal>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('voice_signals_to_idx').on(t.toId, t.id), index('voice_signals_room_idx').on(t.roomId)],
 )
 
 // Messages sent through the public /sir link to the admins. The sender gives their Instagram
