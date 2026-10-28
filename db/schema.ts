@@ -114,23 +114,8 @@ export type VoiceSignal = {
   candidate?: { candidate?: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null }
 }
 
-// An admin listening to a room's call (receive only, never sends audio). Counts while seen_at
-// is recent, like voice_members. In voice_signals it is addressed as the negative of its id.
-export const voiceListeners = pgTable(
-  'voice_listeners',
-  {
-    id: serial().primaryKey(),
-    roomId: integer('room_id')
-      .notNull()
-      .references(() => rooms.id, { onDelete: 'cascade' }),
-    seenAt: timestamp('seen_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [index('voice_listeners_room_idx').on(t.roomId)],
-)
-
-// WebRTC setup messages (offer, answer, ICE candidates) passed between two members of a room's call:
-// a player id, or minus a voice_listeners id for an admin listening in (so no foreign key on them).
-// The audio itself goes straight between them; rows are deleted after a couple of minutes.
+// WebRTC setup messages (offer, answer, ICE candidates) passed between two players of a room.
+// The audio itself goes straight between the players; rows are deleted after a couple of minutes.
 export const voiceSignals = pgTable(
   'voice_signals',
   {
@@ -138,8 +123,12 @@ export const voiceSignals = pgTable(
     roomId: integer('room_id')
       .notNull()
       .references(() => rooms.id, { onDelete: 'cascade' }),
-    fromId: integer('from_id').notNull(),
-    toId: integer('to_id').notNull(),
+    fromId: integer('from_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    toId: integer('to_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
     data: jsonb().$type<VoiceSignal>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

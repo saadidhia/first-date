@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { BarChart3, LogOut, MessageCircleHeart, Radio, Users } from 'lucide-react'
+import { BarChart3, LogOut, MessageCircleHeart, Users } from 'lucide-react'
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <nav className="flex gap-1 rounded-2xl border border-border bg-card/60 p-1">
             <Tab to="/admin" icon={<BarChart3 className="size-4" />} label="الإحصائيات" />
             <Tab to="/admin/players" icon={<Users className="size-4" />} label="اللاعبين" />
-            <Tab to="/admin/live" icon={<Radio className="size-4" />} label="المكالمات" />
             <Tab to="/admin/messages" icon={<MessageCircleHeart className="size-4" />} label="الرسائل" />
           </nav>
           <span className="text-sm text-muted-foreground" dir="ltr">
@@ -62,15 +61,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Tab({
-  to,
-  icon,
-  label,
-}: {
-  to: '/admin' | '/admin/players' | '/admin/live' | '/admin/messages'
-  icon: React.ReactNode
-  label: string
-}) {
+function Tab({ to, icon, label }: { to: '/admin' | '/admin/players' | '/admin/messages'; icon: React.ReactNode; label: string }) {
   return (
     <Link
       to={to}
