@@ -8,6 +8,7 @@ import { voiceSync } from './voice.functions'
 // To avoid both sides offering at once, the player with the smaller id always makes the offer.
 // Players join as listeners when they open the room; each connection keeps an audio slot,
 // and turning the mic on just puts it in there (no new connection needed).
+// An admin listening in has a negative id, so it makes the offer, and it only receives audio.
 
 type Member = { id: number; muted: boolean; speaking: boolean }
 type Signal = VoiceSignal
@@ -288,7 +289,9 @@ export function useVoice(code: string, token: string) {
             const stuck =
               p.pc.connectionState !== 'connected' &&
               (age > CONNECT_MS || (p.pc.signalingState === 'have-local-offer' && age > ANSWER_MS))
-            if (!ids.has(id) || (stuck && res.me < id)) closePeer(id)
+            // A peer with a negative id is someone connecting in from outside the roster; it starts the
+            // connection itself and isn't a member, so we only drop it when the connection fails
+            if ((id > 0 && !ids.has(id)) || (stuck && res.me < id)) closePeer(id)
           }
           for (const id of ids) {
             if (res.me < id && !peers.current.has(id)) await call(id)
