@@ -413,16 +413,6 @@ export function useVoice(code: string, token: string) {
     }
   }, [joining, connect])
 
-  const join = useCallback(() => {
-    connect()
-    void turnMicOn()
-  }, [connect, turnMicOn])
-
-  const leave = useCallback(() => {
-    hangUp()
-    kick.current()
-  }, [hangUp])
-
   const toggleMute = useCallback(() => {
     if (!stream.current) return void turnMicOn()
     const next = !mutedRef.current
@@ -444,8 +434,6 @@ export function useVoice(code: string, token: string) {
     talking,
     connected,
     error,
-    join,
-    leave,
     toggleMute,
   }
 }

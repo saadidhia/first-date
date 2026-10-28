@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Mic, MicOff, PhoneOff } from 'lucide-react'
+import { Loader2, Mic, MicOff } from 'lucide-react'
 
 import { useVoice } from '@/lib/use-voice'
 import { cn } from '@/lib/utils'
@@ -9,7 +9,7 @@ type Person = { id: number; name: string; gender: string | null }
 const g = (gender: string | null | undefined, male: string, female: string) =>
   gender === 'female' ? female : male
 
-/** The room's voice chat: join, mute, leave, and who is talking right now. */
+/** The room's voice chat: everyone hears the call, one mic button to talk, and who is talking right now. */
 export function VoiceBar({
   code,
   token,
@@ -31,18 +31,9 @@ export function VoiceBar({
     .filter((m) => m.name)
   const talkers = voice.talking.map((id) => people.get(id)).filter((p): p is Person => !!p)
   const others_ = inCall.filter((m) => !m.self)
-  // Everyone in the room is in the call as a listener; say who can't hear, or it looks like everyone does
-  const alone = voice.inCall && voice.micOn && others_.length === 0
-  const listening = voice.inCall && !voice.micOn && others_.length > 0
-  const missing = !voice.inCall && others_.length > 0
 
   return (
-    <div
-      className={cn(
-        'mt-2 rounded-2xl border px-2.5 py-2',
-        missing ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-border bg-muted/40',
-      )}
-    >
+    <div className="mt-2 rounded-2xl border border-border bg-muted/40 px-2.5 py-2">
       <div className="flex items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
           {inCall.length === 0 ? (
@@ -77,62 +68,25 @@ export function VoiceBar({
           )}
         </div>
 
-        {voice.inCall && !voice.micOn ? (
-          <>
-            <button
-              type="button"
-              onClick={voice.toggleMute}
-              disabled={voice.joining}
-              className="btn-love flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
-            >
-              {voice.joining ? <Loader2 className="size-3.5 animate-spin" /> : <Mic className="size-3.5" />}
-              احكي
-            </button>
-            <button
-              type="button"
-              onClick={voice.leave}
-              className="grid size-8 shrink-0 place-items-center rounded-full bg-destructive text-white"
-              aria-label="اخرج من المكالمة"
-            >
-              <PhoneOff className="size-4" />
-            </button>
-          </>
-        ) : voice.inCall ? (
-          <>
-            <button
-              type="button"
-              onClick={voice.toggleMute}
-              className={cn(
-                'grid size-8 shrink-0 place-items-center rounded-full',
-                voice.muted ? 'bg-destructive/20 text-destructive' : 'bg-emerald-500/20 text-emerald-300',
-              )}
-              aria-label={voice.muted ? 'حلّ الميكرو' : 'سكّر الميكرو'}
-            >
-              {voice.muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={voice.leave}
-              className="grid size-8 shrink-0 place-items-center rounded-full bg-destructive text-white"
-              aria-label="اخرج من المكالمة"
-            >
-              <PhoneOff className="size-4" />
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={voice.join}
-            disabled={voice.joining}
-            className={cn(
-              'btn-love flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white',
-              missing && !voice.joining && 'animate-pulse',
-            )}
-          >
-            {voice.joining ? <Loader2 className="size-3.5 animate-spin" /> : <Mic className="size-3.5" />}
-            {others_.length ? 'ادخل احكي' : 'حلّ الميكرو'}
-          </button>
-        )}
+        {/* One button: red = muted, nobody hears me; green = everyone hears me */}
+        <button
+          type="button"
+          onClick={voice.toggleMute}
+          disabled={voice.joining}
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-full transition-colors',
+            voice.muted ? 'bg-destructive text-white' : 'bg-emerald-500 text-white shadow-[0_0_12px] shadow-emerald-400/60',
+          )}
+          aria-label={voice.muted ? 'حلّ الميكرو' : 'سكّر الميكرو'}
+        >
+          {voice.joining ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : voice.muted ? (
+            <MicOff className="size-4" />
+          ) : (
+            <Mic className="size-4" />
+          )}
+        </button>
       </div>
 
       {(talkers.length > 0 || left != null || voice.error) && (
@@ -164,22 +118,15 @@ export function VoiceBar({
           🔈 انزل في أي بلاصة في الشاشة باش تسمع صحابك
         </p>
       )}
-      {listening && !voice.needsTap && (
+      {!voice.needsTap && others_.length > 0 && (
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          🎧 تسمع في صحابك. انزل على «احكي» باش يسمعوك إنتي زادة
+          {voice.muted
+            ? '🔇 الميكرو مسكّر، حد ما يسمعك. انزل عليه باش تحكي'
+            : '🎙️ الميكرو محلول، صحابك يسمعوك'}
         </p>
       )}
-      {alone && (
-        <p className="mt-1.5 text-[11px] text-gold">
-          🔇 حتى حد ما يسمعك توّا. صحابك يسمعوك كي يحلّو اللعبة
-        </p>
-      )}
-      {missing && (
-        <p className="mt-1.5 text-[11px] font-semibold text-emerald-200">
-          {`🎧 ${others_.map((m) => m.name).join(' و ')} في المكالمة. انزل على «ادخل احكي» باش ${
-            others_.length > 1 ? 'تسمعهم وتحكي معاهم' : g(others_[0].gender, 'تسمعو وتحكي معاه', 'تسمعها وتحكي معاها')
-          }`}
-        </p>
+      {!voice.muted && others_.length === 0 && (
+        <p className="mt-1.5 text-[11px] text-gold">🔇 حتى حد ما يسمعك توّا. صحابك يسمعوك كي يحلّو اللعبة</p>
       )}
     </div>
   )
