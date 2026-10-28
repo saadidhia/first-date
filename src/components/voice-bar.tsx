@@ -31,9 +31,18 @@ export function VoiceBar({
     .filter((m) => m.name)
   const talkers = voice.talking.map((id) => people.get(id)).filter((p): p is Person => !!p)
   const others_ = inCall.filter((m) => !m.self)
+  // Everyone in the room is in the call as a listener; say who can't hear, or it looks like everyone does
+  const alone = voice.inCall && voice.micOn && others_.length === 0
+  const listening = voice.inCall && !voice.micOn && others_.length > 0
+  const missing = !voice.inCall && others_.length > 0
 
   return (
-    <div className="mt-2 rounded-2xl border border-border bg-muted/40 px-2.5 py-2">
+    <div
+      className={cn(
+        'mt-2 rounded-2xl border px-2.5 py-2',
+        missing ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-border bg-muted/40',
+      )}
+    >
       <div className="flex items-center gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
           {inCall.length === 0 ? (
@@ -68,7 +77,27 @@ export function VoiceBar({
           )}
         </div>
 
-        {voice.inCall ? (
+        {voice.inCall && !voice.micOn ? (
+          <>
+            <button
+              type="button"
+              onClick={voice.toggleMute}
+              disabled={voice.joining}
+              className="btn-love flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              {voice.joining ? <Loader2 className="size-3.5 animate-spin" /> : <Mic className="size-3.5" />}
+              احكي
+            </button>
+            <button
+              type="button"
+              onClick={voice.leave}
+              className="grid size-8 shrink-0 place-items-center rounded-full bg-destructive text-white"
+              aria-label="اخرج من المكالمة"
+            >
+              <PhoneOff className="size-4" />
+            </button>
+          </>
+        ) : voice.inCall ? (
           <>
             <button
               type="button"
@@ -95,7 +124,10 @@ export function VoiceBar({
             type="button"
             onClick={voice.join}
             disabled={voice.joining}
-            className="btn-love flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+            className={cn(
+              'btn-love flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white',
+              missing && !voice.joining && 'animate-pulse',
+            )}
           >
             {voice.joining ? <Loader2 className="size-3.5 animate-spin" /> : <Mic className="size-3.5" />}
             {others_.length ? 'ادخل احكي' : 'حلّ الميكرو'}
@@ -125,6 +157,29 @@ export function VoiceBar({
             )
           )}
         </div>
+      )}
+
+      {voice.needsTap && voice.inCall && others_.length > 0 && (
+        <p className="mt-1.5 text-[11px] font-semibold text-emerald-200">
+          🔈 انزل في أي بلاصة في الشاشة باش تسمع صحابك
+        </p>
+      )}
+      {listening && !voice.needsTap && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          🎧 تسمع في صحابك. انزل على «احكي» باش يسمعوك إنتي زادة
+        </p>
+      )}
+      {alone && (
+        <p className="mt-1.5 text-[11px] text-gold">
+          🔇 حتى حد ما يسمعك توّا. صحابك يسمعوك كي يحلّو اللعبة
+        </p>
+      )}
+      {missing && (
+        <p className="mt-1.5 text-[11px] font-semibold text-emerald-200">
+          {`🎧 ${others_.map((m) => m.name).join(' و ')} في المكالمة. انزل على «ادخل احكي» باش ${
+            others_.length > 1 ? 'تسمعهم وتحكي معاهم' : g(others_[0].gender, 'تسمعو وتحكي معاه', 'تسمعها وتحكي معاها')
+          }`}
+        </p>
       )}
     </div>
   )

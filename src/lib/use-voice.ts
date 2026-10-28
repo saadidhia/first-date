@@ -6,6 +6,8 @@ import { voiceSync } from './voice.functions'
 // The room's voice chat: every player in the call is connected to every other one (WebRTC,
 // audio only), and the server just relays the setup messages through `voiceSync`.
 // To avoid both sides offering at once, the player with the smaller id always makes the offer.
+// Players join as listeners when they open the room; each connection keeps an audio slot,
+// and turning the mic on just puts it in there (no new connection needed).
 
 type Member = { id: number; muted: boolean; speaking: boolean }
 type Signal = VoiceSignal
@@ -15,6 +17,8 @@ type Peer = {
   audio: HTMLAudioElement
   pending: RTCIceCandidateInit[]
   startedAt: number
+  // Carries my mic to them, once I turn it on
+  slot?: RTCRtpTransceiver
   level?: AnalyserNode
 }
 
@@ -45,14 +49,18 @@ export function useVoice(code: string, token: string) {
   const [members, setMembers] = useState<Member[]>([])
   const [inCall, setInCall] = useState(false)
   const [joining, setJoining] = useState(false)
-  const [muted, setMuted] = useState(false)
+  // Listening only until the mic is turned on, so muted from the start
+  const [muted, setMuted] = useState(true)
+  const [micOn, setMicOn] = useState(false)
+  // The browser held the sound back until the player taps the page
+  const [needsTap, setNeedsTap] = useState(false)
   const [talking, setTalking] = useState<number[]>([])
   const [connected, setConnected] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const me = useRef(0)
   const inCallRef = useRef(false)
-  const mutedRef = useRef(false)
+  const mutedRef = useRef(true)
   const speakingRef = useRef(false)
   const since = useRef(0)
   const outbox = useRef<{ to: number; data: Signal }[]>([])
@@ -74,7 +82,9 @@ export function useVoice(code: string, token: string) {
 
   // A browser can refuse to start the sound without a tap (mostly iPhones): it starts on the next one
   const playOnTap = useCallback(() => {
+    setNeedsTap(true)
     const play = () => {
+      setNeedsTap(false)
       ctx.current?.resume().catch(() => {})
       for (const p of peers.current.values()) p.audio.play().catch(() => {})
     }
@@ -140,7 +150,11 @@ export function useVoice(code: string, token: string) {
   const call = useCallback(
     async (id: number) => {
       const peer = makePeer(id, crypto.randomUUID())
-      for (const track of stream.current?.getTracks() ?? []) peer.pc.addTrack(track, stream.current!)
+      const mic = stream.current?.getAudioTracks()[0]
+      peer.slot = peer.pc.addTransceiver(mic ?? 'audio', {
+        direction: 'sendrecv',
+        streams: stream.current ? [stream.current] : [],
+      })
       await peer.pc.setLocalDescription(await peer.pc.createOffer())
       send(id, { type: 'offer', sid: peer.sid, sdp: peer.pc.localDescription!.sdp })
     },
@@ -154,8 +168,13 @@ export function useVoice(code: string, token: string) {
         closePeer(from)
         const peer = makePeer(from, s.sid)
         await peer.pc.setRemoteDescription({ type: 'offer', sdp: s.sdp })
-        // Added after the offer so the track goes in the transceiver the offer created
-        for (const track of stream.current?.getTracks() ?? []) peer.pc.addTrack(track, stream.current!)
+        // The audio slot the offer created, opened both ways so my mic can go in it later
+        peer.slot = peer.pc.getTransceivers().find((t) => t.receiver.track.kind === 'audio')
+        if (peer.slot) {
+          peer.slot.direction = 'sendrecv'
+          const mic = stream.current?.getAudioTracks()[0]
+          if (mic) await peer.slot.sender.replaceTrack(mic)
+        }
         await peer.pc.setLocalDescription(await peer.pc.createAnswer())
         send(from, { type: 'answer', sid: s.sid, sdp: peer.pc.localDescription!.sdp })
         for (const c of peer.pending.splice(0)) await peer.pc.addIceCandidate(c).catch(() => {})
@@ -185,6 +204,10 @@ export function useVoice(code: string, token: string) {
     ctx.current?.close().catch(() => {})
     ctx.current = null
     outbox.current = []
+    mutedRef.current = true
+    setMuted(true)
+    setMicOn(false)
+    setNeedsTap(false)
     setInCall(false)
     setTalking([])
   }, [closePeer])
@@ -292,14 +315,16 @@ export function useVoice(code: string, token: string) {
     const id = window.setInterval(() => {
       const now = Date.now()
       const ids: number[] = []
-      if (inCallRef.current) {
+      // The meter only works once the browser lets sound run (after a tap)
+      const measuring = ctx.current?.state === 'running'
+      if (inCallRef.current && measuring) {
         if (!mutedRef.current && loud(myLevel.current)) lastLoud.set(me.current, now)
         for (const [pid, p] of peers.current) if (loud(p.level)) lastLoud.set(pid, now)
         for (const [pid, t] of lastLoud) if (now - t < SPEAK_HOLD_MS) ids.push(pid)
-        speakingRef.current = ids.includes(me.current) && !mutedRef.current
       }
+      speakingRef.current = ids.includes(me.current) && !mutedRef.current
       for (const pid of serverSpeaking.current)
-        if (!peers.current.get(pid)?.level && !ids.includes(pid)) ids.push(pid)
+        if (!(measuring && peers.current.get(pid)?.level) && !ids.includes(pid)) ids.push(pid)
       ids.sort((a, b) => a - b)
       setTalking((old) => (old.join() === ids.join() ? old : ids))
     }, 120)
@@ -313,8 +338,30 @@ export function useVoice(code: string, token: string) {
     return () => window.clearTimeout(id)
   }, [closesAt])
 
-  const join = useCallback(async () => {
-    if (inCallRef.current || joining) return
+  // Joins the call as a listener: no mic, so no permission to ask
+  const connect = useCallback(() => {
+    if (inCallRef.current || typeof RTCPeerConnection === 'undefined') return
+    // Only measures who is talking, so the call works without it
+    try {
+      const AC = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      ctx.current = AC ? new AC() : null
+      ctx.current?.resume().catch(() => {})
+    } catch {
+      ctx.current = null
+    }
+    inCallRef.current = true
+    setInCall(true)
+    kick.current()
+  }, [])
+
+  // Everyone hears the others as soon as they open the room
+  useEffect(() => {
+    connect()
+  }, [connect])
+
+  // Asks for the mic (from a tap) and sends it to everyone I'm connected to
+  const turnMicOn = useCallback(async () => {
+    if (stream.current || joining) return
     if (!window.isSecureContext) {
       setError('الميكرو يخدم كان كي تحلّ اللعبة بـ https://')
       return
@@ -327,47 +374,49 @@ export function useVoice(code: string, token: string) {
       )
       return
     }
+    connect()
+    // During the tap itself: iPhones only let sound start from one
+    ctx.current?.resume().catch(() => {})
     setJoining(true)
     setError(null)
-    // Made during the tap itself: iPhones only let sound start from one. It only measures who
-    // is talking, so the call works without it.
-    let ac: AudioContext | null = null
-    try {
-      const AC = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      ac = AC ? new AC() : null
-      ac?.resume().catch(() => {})
-    } catch {
-      // No sound meter on this browser
-    }
     try {
       const mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       })
+      // Left the call while the browser was asking
+      if (!inCallRef.current) {
+        for (const t of mic.getTracks()) t.stop()
+        return
+      }
       stream.current = mic
-      if (ac) {
+      if (ctx.current) {
         try {
-          const level = ac.createAnalyser()
+          const level = ctx.current.createAnalyser()
           level.fftSize = 512
-          ac.createMediaStreamSource(mic).connect(level)
+          ctx.current.createMediaStreamSource(mic).connect(level)
           myLevel.current = level
-          ctx.current = ac
         } catch {
-          ac.close().catch(() => {})
+          // No meter for my own voice
         }
       }
+      const track = mic.getAudioTracks()[0]
+      for (const p of peers.current.values()) p.slot?.sender.replaceTrack(track).catch(() => {})
       mutedRef.current = false
       setMuted(false)
-      inCallRef.current = true
-      setInCall(true)
+      setMicOn(true)
       kick.current()
     } catch (e) {
-      ac?.close().catch(() => {})
       setError(micError(e))
     } finally {
       setJoining(false)
     }
-  }, [joining])
+  }, [joining, connect])
+
+  const join = useCallback(() => {
+    connect()
+    void turnMicOn()
+  }, [connect, turnMicOn])
 
   const leave = useCallback(() => {
     hangUp()
@@ -375,12 +424,28 @@ export function useVoice(code: string, token: string) {
   }, [hangUp])
 
   const toggleMute = useCallback(() => {
+    if (!stream.current) return void turnMicOn()
     const next = !mutedRef.current
     mutedRef.current = next
-    for (const t of stream.current?.getAudioTracks() ?? []) t.enabled = !next
+    for (const t of stream.current.getAudioTracks()) t.enabled = !next
     setMuted(next)
     kick.current()
-  }, [])
+  }, [turnMicOn])
 
-  return { open, closesAt, members, inCall, joining, muted, talking, connected, error, join, leave, toggleMute }
+  return {
+    open,
+    closesAt,
+    members,
+    inCall,
+    joining,
+    muted,
+    micOn,
+    needsTap,
+    talking,
+    connected,
+    error,
+    join,
+    leave,
+    toggleMute,
+  }
 }
