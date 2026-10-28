@@ -107,7 +107,8 @@ export const voiceMembers = pgTable(
 )
 
 export type VoiceSignal = {
-  type: 'offer' | 'answer' | 'ice'
+  // hello: "I opened the page again, send me a new offer"
+  type: 'offer' | 'answer' | 'ice' | 'hello'
   sid: string
   sdp?: string
   candidate?: { candidate?: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null }

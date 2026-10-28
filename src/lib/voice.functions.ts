@@ -33,7 +33,7 @@ function iceServers(playerId: number): IceServer[] {
 const signalSchema = z.object({
   to: z.number().int(),
   data: z.object({
-    type: z.enum(['offer', 'answer', 'ice']),
+    type: z.enum(['offer', 'answer', 'ice', 'hello']),
     sid: z.string().max(64),
     sdp: z.string().max(20_000).optional(),
     candidate: z
