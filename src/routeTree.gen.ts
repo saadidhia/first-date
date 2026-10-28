@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as SirRouteImport } from './routes/sir'
+import { Route as AdminLiveRouteImport } from './routes/admin_.live'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
@@ -29,6 +30,11 @@ const AdminRoute = AdminRouteImport.update({
 const SirRoute = SirRouteImport.update({
   id: '/sir',
   path: '/sir',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminLiveRoute = AdminLiveRouteImport.update({
+  id: '/admin_/live',
+  path: '/admin/live',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminMessagesRoute = AdminMessagesRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin/live': typeof AdminLiveRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin/live': typeof AdminLiveRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/sir': typeof SirRoute
+  '/admin_/live': typeof AdminLiveRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/sir'
+    | '/admin/live'
     | '/admin/messages'
     | '/admin/players'
     | '/room/$code'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/sir'
+    | '/admin/live'
     | '/admin/messages'
     | '/admin/players'
     | '/room/$code'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/sir'
+    | '/admin_/live'
     | '/admin_/messages'
     | '/admin_/players'
     | '/room/$code'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   SirRoute: typeof SirRoute
+  AdminLiveRoute: typeof AdminLiveRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
   RoomCodeRoute: typeof RoomCodeRoute
@@ -129,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/sir'
       fullPath: '/sir'
       preLoaderRoute: typeof SirRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/live': {
+      id: '/admin_/live'
+      path: '/admin/live'
+      fullPath: '/admin/live'
+      preLoaderRoute: typeof AdminLiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin_/messages': {
@@ -159,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   SirRoute: SirRoute,
+  AdminLiveRoute: AdminLiveRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
   RoomCodeRoute: RoomCodeRoute,
