@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Search, Users } from 'lucide-react'
 
-import { GameRow, PairLegend } from '@/components/admin-games'
+import { GameRow, PairLegend, useAdminVoice } from '@/components/admin-games'
 import { AdminShell, Segmented } from '@/components/admin-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,6 +44,7 @@ function GameList() {
   const [limit, setLimit] = useState(PAGE)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const voice = useAdminVoice()
 
   // Wait until typing stops before searching
   useEffect(() => {
@@ -111,7 +112,7 @@ function GameList() {
         ) : (
           <ul className="mt-2 divide-y divide-border">
             {result.games.map((g) => (
-              <GameRow key={g.id} game={g} />
+              <GameRow key={g.id} game={g} voice={voice} />
             ))}
           </ul>
         )}

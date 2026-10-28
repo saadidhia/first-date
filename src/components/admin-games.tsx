@@ -1,4 +1,7 @@
-import type { AdminGame } from '@/lib/admin.functions'
+import { useEffect, useState } from 'react'
+import { Mic, MicOff } from 'lucide-react'
+
+import { type AdminGame, getAdminVoice } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
 
 // Couples (First Date) are linked in pink, friends (صحاب) in blue
@@ -25,6 +28,28 @@ export function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString('ar-TN', { day: 'numeric', month: 'short' })
 }
 
+type MicState = { muted: boolean; speaking: boolean }
+export type VoiceMap = Map<number, MicState>
+
+/** Who is in a voice call right now, by player id, refreshed every 2 seconds. */
+export function useAdminVoice(): VoiceMap {
+  const [voice, setVoice] = useState<VoiceMap>(new Map())
+  useEffect(() => {
+    let stop = false
+    const load = () =>
+      getAdminVoice()
+        .then((rows) => !stop && setVoice(new Map(rows.map((r) => [r.id, r]))))
+        .catch(() => {})
+    load()
+    const id = window.setInterval(() => !document.hidden && load(), 2000)
+    return () => {
+      stop = true
+      window.clearInterval(id)
+    }
+  }, [])
+  return voice
+}
+
 export function PairLegend() {
   return (
     <div className="flex gap-4 text-xs text-muted-foreground">
@@ -42,7 +67,7 @@ export function PairLegend() {
  * One game: its players linked by a pink (couple) or blue (friends) line. A friends group of
  * 3 or more shows everyone in a row, each linked to the next.
  */
-export function GameRow({ game }: { game: AdminGame }) {
+export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
   const [host, ...guests] = game.players
   const progress = game.phase === 'done' ? game.questions : Math.min(game.currentIndex, game.questions)
   return (
@@ -52,14 +77,14 @@ export function GameRow({ game }: { game: AdminGame }) {
           {game.players.map((p, i) => (
             <div key={p.id} className="flex min-w-0 items-center">
               {i > 0 && <span className={cn('h-0.5 w-5 shrink-0 rounded-full', LINE[game.mode])} aria-hidden />}
-              <PlayerChip player={p} mode={game.mode} className="max-w-36" />
+              <PlayerChip player={p} mode={game.mode} mic={voice.get(p.id)} className="max-w-36" />
             </div>
           ))}
           <span className="ms-2 text-xs text-muted-foreground">{MODE_EMOJI[game.mode]} {game.players.length}</span>
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          {host && <PlayerChip player={host} mode={game.mode} />}
+          {host && <PlayerChip player={host} mode={game.mode} mic={voice.get(host.id)} />}
           <div className="relative flex min-w-8 flex-1 items-center" aria-hidden>
             <span
               className={cn(
@@ -72,7 +97,7 @@ export function GameRow({ game }: { game: AdminGame }) {
             </span>
           </div>
           {guests[0] ? (
-            <PlayerChip player={guests[0]} mode={game.mode} />
+            <PlayerChip player={guests[0]} mode={game.mode} mic={voice.get(guests[0].id)} />
           ) : (
             <span className="shrink-0 text-xs text-muted-foreground">ما دخل حد</span>
           )}
@@ -124,17 +149,25 @@ function MatchLine({
 function PlayerChip({
   player,
   mode,
+  mic,
   className = 'max-w-[40%]',
 }: {
   player: AdminGame['players'][number]
   mode: AdminGame['mode']
+  // Their voice call state; undefined when they are not in the call
+  mic?: MicState
   className?: string
 }) {
+  const open = !!mic && !mic.muted
   const emoji =
     player.gender === 'female' ? (mode === 'date' ? '👰' : '👩') : player.gender === 'male' ? (mode === 'date' ? '🤵' : '👨') : '👤'
   return (
     <span
-      className={cn('flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-background/50 px-2.5 py-1 text-sm', className)}
+      className={cn(
+        'flex min-w-0 items-center gap-1.5 rounded-full border bg-background/50 px-2.5 py-1 text-sm',
+        open && mic.speaking ? 'border-emerald-400 bg-emerald-400/10' : 'border-border',
+        className,
+      )}
       title={player.online ? 'en ligne توّا' : `آخر مرّة ${timeAgo(player.lastSeenAt)}`}
     >
       <span
@@ -143,6 +176,17 @@ function PlayerChip({
       <span className="truncate font-semibold">
         {emoji} {player.name}
       </span>
+      {open ? (
+        <Mic
+          className={cn('size-3.5 shrink-0 text-emerald-400', mic.speaking && 'animate-pulse')}
+          aria-label={mic.speaking ? 'يحكي توّا' : 'الميكرو محلول'}
+        />
+      ) : (
+        <MicOff
+          className={cn('size-3.5 shrink-0', mic ? 'text-destructive' : 'text-muted-foreground/40')}
+          aria-label={mic ? 'سكّر الميكرو' : 'الميكرو مسكّر'}
+        />
+      )}
     </span>
   )
 }
