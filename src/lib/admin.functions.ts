@@ -340,3 +340,40 @@ export const getAdminVoice = createServerFn({ method: 'GET' }).handler(async () 
     .from(voiceMembers)
     .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
 })
+
+export type LiveRoom = Awaited<ReturnType<typeof getAdminLive>>[number]
+
+/**
+ * The rooms with someone in a voice call right now, each with its members and whether their mic
+ * is open / they are talking. Feeds the "live" admin page, which listens from there. Rooms with an
+ * open mic come first, and a talking member first, so the active calls are at the top.
+ */
+export const getAdminLive = createServerFn({ method: 'GET' }).handler(async () => {
+  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+  const rows = await db
+    .select({
+      roomId: rooms.id,
+      code: rooms.code,
+      mode: rooms.mode,
+      id: players.id,
+      name: players.name,
+      gender: players.gender,
+      muted: voiceMembers.muted,
+      speaking: voiceMembers.speaking,
+    })
+    .from(voiceMembers)
+    .innerJoin(players, eq(players.id, voiceMembers.playerId))
+    .innerJoin(rooms, eq(rooms.id, voiceMembers.roomId))
+    .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
+    .orderBy(asc(voiceMembers.playerId))
+
+  const byRoom = new Map<number, { code: string; mode: Mode; members: Omit<(typeof rows)[number], 'roomId' | 'code' | 'mode'>[] }>()
+  for (const { roomId, code, mode, ...member } of rows) {
+    let room = byRoom.get(roomId)
+    if (!room) byRoom.set(roomId, (room = { code, mode: asMode(mode), members: [] }))
+    room.members.push(member)
+  }
+  const rank = (r: { members: { muted: boolean; speaking: boolean }[] }) =>
+    (r.members.some((m) => m.speaking) ? 2 : 0) + (r.members.some((m) => !m.muted) ? 1 : 0)
+  return [...byRoom.values()].sort((a, b) => rank(b) - rank(a) || a.code.localeCompare(b.code))
+})
