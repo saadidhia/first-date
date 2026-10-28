@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Headphones, Mic, MicOff } from 'lucide-react'
+import { Mic, MicOff } from 'lucide-react'
 
 import { type AdminGame, getAdminVoice } from '@/lib/admin.functions'
-import { useListen } from '@/lib/use-listen'
 import { cn } from '@/lib/utils'
 
 // Couples (First Date) are linked in pink, friends (صحاب) in blue
@@ -105,54 +104,11 @@ export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
         </div>
       )}
       {game.match && <MatchLine match={game.match} mode={game.mode} group={guests.length > 1} />}
-      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          لعبة <span dir="ltr" className="font-mono">{game.code}</span> · {PHASE_LABEL[game.phase] ?? game.phase}
-          {guests.length > 0 && game.phase !== 'waiting' && ` · سؤال ${progress}/${game.questions}`} · بدات {timeAgo(game.createdAt)}
-        </p>
-        <ListenButton game={game} voice={voice} />
-      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        لعبة <span dir="ltr" className="font-mono">{game.code}</span> · {PHASE_LABEL[game.phase] ?? game.phase}
+        {guests.length > 0 && game.phase !== 'waiting' && ` · سؤال ${progress}/${game.questions}`} · بدات {timeAgo(game.createdAt)}
+      </p>
     </li>
-  )
-}
-
-/**
- * Listens to the game's voice call: everyone whose mic is on is heard at the same time.
- * Shown while someone is in the call (and while listening, to stop).
- */
-function ListenButton({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
-  const listen = useListen(game.code)
-  const inCall = game.players.filter((p) => voice.has(p.id))
-  if (!listen.on && inCall.length === 0) return listen.error ? <span className="text-xs text-destructive">{listen.error}</span> : null
-
-  const open = inCall.filter((p) => !voice.get(p.id)!.muted)
-  const heard = open.filter((p) => listen.connected.includes(p.id))
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      {listen.on && (
-        <span className="text-muted-foreground">
-          {open.length === 0
-            ? 'حتى ميكرو ما هو محلول'
-            : heard.length === open.length
-              ? `تسمع ${heard.map((p) => p.name).join(' و ')}`
-              : 'يتّصل…'}
-        </span>
-      )}
-      {listen.error && <span className="text-destructive">{listen.error}</span>}
-      <button
-        type="button"
-        onClick={listen.on ? listen.stop : listen.start}
-        className={cn(
-          'flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors',
-          listen.on
-            ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200 shadow-[0_0_10px] shadow-emerald-400/40'
-            : 'border-border bg-background/50 hover:bg-muted',
-        )}
-      >
-        <Headphones className={cn('size-3.5', listen.on && 'animate-pulse')} />
-        {listen.on ? 'وقّف السماع' : 'اسمع'}
-      </button>
-    </div>
   )
 }
 
