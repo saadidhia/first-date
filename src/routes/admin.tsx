@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { CalendarDays, Clock, Gamepad2, Moon, Radio, Users } from 'lucide-react'
+import { CalendarDays, Clock, Gamepad2, Heart, Moon, Radio, Users } from 'lucide-react'
 
-import { GameRow, PairLegend } from '@/components/admin-games'
+import { GameRow, PairLegend, matchWord } from '@/components/admin-games'
 import { AdminShell, Segmented, StatCard } from '@/components/admin-shell'
 import { getAdminStats } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
@@ -82,6 +82,7 @@ function Dashboard() {
         <EmptyTodayCard today={stats?.today} />
       </div>
       {stats && <GamesByMode games={stats.games} />}
+      {stats && <MatchSection match={stats.match} />}
       {stats && <DailySection days={stats.days} />}
       {stats && <RecentList games={stats.recent} />}
       <p className="mt-4 text-xs text-muted-foreground">
@@ -375,6 +376,62 @@ function GamesByMode({ games }: { games: Stats['games'] }) {
             </p>
           </div>
         ))}
+      </div>
+    </section>
+  )
+}
+
+/** Average match % of finished games: couples, and every pair of friends. */
+function MatchSection({ match }: { match: Stats['match'] }) {
+  const modes = [
+    { key: 'date', label: '💘 الكوبل', unit: 'كوبل', bar: 'bg-primary', text: 'text-primary', ...match.date },
+    { key: 'friends', label: '🤝 الصحاب', unit: 'زوز صحاب', bar: 'bg-sidi-blue', text: 'text-sidi-blue', ...match.friends },
+  ]
+  return (
+    <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
+      <div className="flex items-center gap-2">
+        <Heart className="size-5 text-primary" />
+        <h2 className="font-display text-lg font-semibold">نسبة التوافق</h2>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        نفس النسبة اللي يشوفوها في التقرير، على اللعبات اللي كمّلو للآخر. في الصحاب كل زوز يتحسبو وحدهم.
+      </p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {modes.map((m) => {
+          const most = Math.max(1, ...m.buckets.map((b) => b.count))
+          return (
+            <div key={m.key} className="rounded-2xl border border-border bg-background/40 p-4">
+              <div className="text-sm text-muted-foreground">{m.label}</div>
+              {m.average == null ? (
+                <p className="mt-3 text-sm text-muted-foreground">مازال حتى لعبة كمّلت.</p>
+              ) : (
+                <>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className={cn('font-display text-4xl font-bold tabular-nums', m.text)}>{m.average}%</span>
+                    <span className="text-sm text-muted-foreground">{matchWord(m.average)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                    المتوسّط على {m.count.toLocaleString('ar-TN')} {m.unit} · أعلى نسبة {m.best}%
+                  </p>
+                  <div className="mt-4 space-y-1.5">
+                    {m.buckets.map((b) => (
+                      <div key={b.from} className="flex items-center gap-2 text-xs">
+                        <span className="w-24 shrink-0 text-muted-foreground">{matchWord(b.from)}</span>
+                        <span className="w-14 shrink-0 tabular-nums text-muted-foreground" dir="ltr">
+                          {b.from}–{b.to}%
+                        </span>
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div className={cn('h-full rounded-full', m.bar)} style={{ width: `${(b.count / most) * 100}%` }} />
+                        </div>
+                        <span className="w-8 shrink-0 text-end tabular-nums">{b.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
       </div>
     </section>
   )

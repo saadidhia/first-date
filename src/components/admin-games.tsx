@@ -78,11 +78,46 @@ export function GameRow({ game }: { game: AdminGame }) {
           )}
         </div>
       )}
+      {game.match && <MatchLine match={game.match} mode={game.mode} group={guests.length > 1} />}
       <p className="mt-1.5 text-xs text-muted-foreground">
         لعبة <span dir="ltr" className="font-mono">{game.code}</span> · {PHASE_LABEL[game.phase] ?? game.phase}
         {guests.length > 0 && game.phase !== 'waiting' && ` · سؤال ${progress}/${game.questions}`} · بدات {timeAgo(game.createdAt)}
       </p>
     </li>
+  )
+}
+
+export const matchWord = (score: number) =>
+  score >= 80 ? '🔥 توافق كبير' : score >= 65 ? '👍 باهي' : score >= 50 ? '🤔 يمشي' : '😬 صعيب'
+
+/** How well they match: the couple's score, or a group's average and its closest pair. */
+function MatchLine({
+  match,
+  mode,
+  group,
+}: {
+  match: NonNullable<AdminGame['match']>
+  mode: AdminGame['mode']
+  group: boolean
+}) {
+  const best = match.pairs[0]
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <span
+        className={cn(
+          'rounded-full px-2 py-0.5 font-semibold tabular-nums',
+          mode === 'date' ? 'bg-pink-400/15 text-pink-300' : 'bg-sidi-blue/15 text-sidi-blue',
+        )}
+      >
+        {MODE_EMOJI[mode]} {group ? 'متوسّط التوافق' : 'التوافق'} {match.score}%
+      </span>
+      <span className="text-muted-foreground">{matchWord(match.score)}</span>
+      {group && best && (
+        <span className="text-muted-foreground">
+          أقرب زوز: {best.a} و{best.b} <span className="tabular-nums">{best.score}%</span>
+        </span>
+      )}
+    </div>
   )
 }
 
