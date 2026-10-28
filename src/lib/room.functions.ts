@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { db } from '../../db'
 import { answers, events, players, rooms } from '../../db/schema'
 import { recordActivity } from './activity'
+import { authorize } from './room-auth'
 import { computeCompat } from './compat'
 import { computeGroupReport, computeRounds } from './group'
 import { computeMarriageReport } from './marriage'
@@ -49,17 +50,6 @@ const codeSchema = z
   .pipe(z.string().regex(/^[A-Z0-9]{6}$/, 'الكود لازم يكون 6 حروف'))
 const modeSchema = z.enum(['date', 'friends'])
 const authSchema = z.object({ code: codeSchema, token: z.string().uuid() })
-
-async function authorize(code: string, token: string) {
-  const [row] = await db
-    .select({ room: rooms, player: players })
-    .from(players)
-    .innerJoin(rooms, eq(players.roomId, rooms.id))
-    .where(and(eq(players.token, token), eq(rooms.code, code)))
-    .limit(1)
-  if (!row) throw new Error('ما عندكش الحق تدخل للّعبة هذي')
-  return row
-}
 
 type Room = typeof rooms.$inferSelect
 
@@ -115,7 +105,7 @@ async function advance(room: Room) {
   } else if (room.phase === 'reveal') {
     const next = room.currentIndex + 1
     if (next >= room.questionIds.length) {
-      await db.update(rooms).set({ phase: 'done', phaseEndsAt: null }).where(guard)
+      await db.update(rooms).set({ phase: 'done', phaseEndsAt: null, endedAt: new Date() }).where(guard)
     } else {
       await db.update(rooms).set(open(room, next)).where(guard)
     }
@@ -293,8 +283,12 @@ export const getRoomState = createServerFn({ method: 'POST' })
       category: string
       mine: string | null
       // One entry per other player; text is null when they ran out of time (or on marriage questions).
+      // option is the option they picked, null for a reply in their own words.
       // Empty on votes and spins, whose answers only show in the report.
-      theirs: { id: number; text: string | null }[]
+      theirs: { id: number; text: string | null; option: number | null }[]
+      // The options as worded for me, and the one I picked, so the group sees who chose what
+      options: string[]
+      myOption: number | null
       // Marriage questions differ per gender; the partner's answer only shows in the final report
       marriage: boolean
       // The last 5 questions of a date, shown in their own colour
@@ -322,6 +316,8 @@ export const getRoomState = createServerFn({ method: 'POST' })
           category: ROUND_LABEL[round.kind],
           mine: mine?.text ?? null,
           theirs: [],
+          options: [],
+          myOption: null,
           marriage: false,
           finale: false,
           sameWith: [],
@@ -346,7 +342,12 @@ export const getRoomState = createServerFn({ method: 'POST' })
         text: q.text,
         category: categoryLabel(q.cat, og),
         mine: mine?.text ?? null,
-        theirs: others.map((o) => ({ id: o.id, text: q.marriage ? null : (answerOf(o.id, i)?.text ?? null) })),
+        theirs: others.map((o) => {
+          const a = q.marriage ? undefined : answerOf(o.id, i)
+          return { id: o.id, text: a?.text ?? null, option: a?.optionIndex ?? null }
+        }),
+        options: q.marriage ? [] : q.options,
+        myOption: mine?.optionIndex ?? null,
         marriage: q.marriage,
         finale: q.finale,
         sameWith,

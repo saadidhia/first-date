@@ -34,6 +34,9 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      # Voice chat relay, optional (see the turn service below)
+      TURN_URLS: ${TURN_URLS:-}
+      TURN_SECRET: ${TURN_SECRET:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -51,6 +54,24 @@ services:
       - caddy_data:/data
     depends_on:
       - app
+
+  # Optional relay for the voice chat, for players whose network blocks direct audio between
+  # phones (common on 4G). Start it with `docker compose --profile turn up -d`, open UDP/TCP 3478
+  # and UDP 49160-49200 on the server, and set in .env:
+  #   TURN_SECRET=<random string>
+  #   TURN_URLS=turn:<your domain>:3478?transport=udp,turn:<your domain>:3478?transport=tcp
+  turn:
+    image: coturn/coturn:4.6
+    profiles: ['turn']
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      -n --log-file=stdout --no-cli --no-tls --no-dtls --fingerprint
+      --use-auth-secret --static-auth-secret=${TURN_SECRET:-change-me}
+      --realm=${DOMAIN:-localhost} --listening-port=3478 --min-port=49160 --max-port=49200
+      --no-multicast-peers --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255 --denied-peer-ip=192.168.0.0-192.168.255.255
+      --denied-peer-ip=127.0.0.0-127.255.255.255
 
 volumes:
   pgdata:
