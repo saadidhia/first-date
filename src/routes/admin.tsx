@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { CalendarDays, Clock, Gamepad2, Heart, Moon, Radio, Users } from 'lucide-react'
+import { CalendarDays, Clock, Gamepad2, Heart, Mic, MicOff, Moon, Radio, Users } from 'lucide-react'
 
 import { GameRow, PairLegend, matchWord } from '@/components/admin-games'
 import { AdminShell, Segmented, StatCard } from '@/components/admin-shell'
-import { getAdminStats } from '@/lib/admin.functions'
+import { getAdminStats, getAdminVoice } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/admin')({
@@ -81,6 +81,7 @@ function Dashboard() {
         />
         <EmptyTodayCard today={stats?.today} />
       </div>
+      <VoiceNow />
       {stats && <GamesByMode games={stats.games} />}
       {stats && <MatchSection match={stats.match} />}
       {stats && <DailySection days={stats.days} />}
@@ -377,6 +378,69 @@ function GamesByMode({ games }: { games: Stats['games'] }) {
           </div>
         ))}
       </div>
+    </section>
+  )
+}
+
+/** Who is on the mic right now, game by game. */
+function VoiceNow() {
+  const [calls, setCalls] = useState<Awaited<ReturnType<typeof getAdminVoice>>>([])
+  useEffect(() => {
+    let stop = false
+    const load = () =>
+      getAdminVoice()
+        .then((c) => !stop && setCalls(c))
+        .catch(() => {})
+    load()
+    const id = window.setInterval(() => !document.hidden && load(), 2000)
+    return () => {
+      stop = true
+      window.clearInterval(id)
+    }
+  }, [])
+  const people = calls.reduce((n, c) => n + c.members.length, 0)
+  return (
+    <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
+      <div className="flex items-center gap-2">
+        <Mic className="size-5 text-emerald-400" />
+        <h2 className="font-display text-lg font-semibold">شكون في الميكرو توّا</h2>
+        {people > 0 && <span className="size-2 animate-pulse rounded-full bg-emerald-400" />}
+        <span className="ms-auto text-sm tabular-nums text-muted-foreground">
+          {people} {people === 1 ? 'شخص' : 'أشخاص'} في {calls.length} {calls.length === 1 ? 'لعبة' : 'لعبات'}
+        </span>
+      </div>
+      {calls.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">حتى حد ما حلّ الميكرو توّا.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-border">
+          {calls.map((c) => (
+            <li key={c.code} className="flex flex-wrap items-center gap-2 py-2.5">
+              <span className="text-xs text-muted-foreground">
+                {c.mode === 'date' ? '💘' : '🤝'} لعبة <span dir="ltr" className="font-mono">{c.code}</span>
+              </span>
+              {c.members.map((m) => (
+                <span
+                  key={m.id}
+                  className={cn(
+                    'flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm',
+                    m.speaking ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-border bg-background/50',
+                  )}
+                >
+                  {m.muted ? (
+                    <MicOff className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <Mic className={cn('size-3.5', m.speaking ? 'animate-pulse text-emerald-300' : 'text-emerald-400')} />
+                  )}
+                  <span className="font-semibold">{m.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {m.speaking ? (m.gender === 'female' ? 'تحكي' : 'يحكي') : m.muted ? 'مسكّر' : 'ساكت'}
+                  </span>
+                </span>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
