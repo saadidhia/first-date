@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -155,7 +155,10 @@ function Home() {
             <TunisiaFlag className="h-3.5 w-auto" /> لعبة تونسية، بالدارجة
           </span>
           <h1 className="mt-5 max-w-2xl font-display font-bold leading-[1.05] text-white drop-shadow-lg">
-            <span dir="ltr" className="block text-6xl tracking-tight md:text-8xl">
+            <span
+              dir="ltr"
+              className="block text-6xl tracking-tight md:text-8xl"
+            >
               First Date
             </span>
             <span className="mt-3 block text-3xl text-gold md:text-5xl">
@@ -163,8 +166,8 @@ function Home() {
             </span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/85 drop-shadow md:text-xl">
-            30 سؤال فيهم شويّة جرأة وبرشا صراحة. تجاوبو في نفس الوقت، وفي
-            الآخر كل واحد ياخذ تقرير سرّي يقلّو شكون الشخص اللي قدّامو بالحق.
+            30 سؤال فيهم شويّة جرأة وبرشا صراحة. تجاوبو في نفس الوقت، وفي الآخر
+            كل واحد ياخذ تقرير سرّي يقلّو شكون الشخص اللي قدّامو بالحق.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
@@ -291,9 +294,17 @@ function Home() {
       <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <TunisiaFlag className="h-3.5 w-auto" />
-          <span dir="ltr">First Date</span> على الطريقة التونسية · صنعت في
-          تونس بالحب
+          <span dir="ltr">First Date</span> على الطريقة التونسية · صنعت في تونس
+          بالحب
         </span>
+        <div className="mt-3">
+          <Link
+            to="/privacy"
+            className="text-xs underline hover:text-foreground"
+          >
+            سياسة الخصوصية
+          </Link>
+        </div>
       </footer>
     </div>
   )
@@ -431,10 +442,7 @@ function StartCard() {
             className="h-12 rounded-xl bg-background/60 text-base"
           />
         </Field>
-        <Field
-          label="إنت…"
-          hint="باش نكتبولك الأسئلة بالصيغة الصحيحة."
-        >
+        <Field label="إنت…" hint="باش نكتبولك الأسئلة بالصيغة الصحيحة.">
           <GenderPicker value={gender} onChange={setGender} />
         </Field>
         <Button
