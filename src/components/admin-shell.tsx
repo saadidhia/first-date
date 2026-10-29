@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { BarChart3, LogOut, MessageCircleHeart, Users } from 'lucide-react'
+import {
+  BarChart3,
+  Filter,
+  LogOut,
+  MessageCircleHeart,
+  Users,
+} from 'lucide-react'
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
@@ -32,9 +38,26 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <nav className="flex gap-1 rounded-2xl border border-border bg-card/60 p-1">
-            <Tab to="/admin" icon={<BarChart3 className="size-4" />} label="الإحصائيات" />
-            <Tab to="/admin/players" icon={<Users className="size-4" />} label="اللاعبين" />
-            <Tab to="/admin/messages" icon={<MessageCircleHeart className="size-4" />} label="الرسائل" />
+            <Tab
+              to="/admin"
+              icon={<BarChart3 className="size-4" />}
+              label="الإحصائيات"
+            />
+            <Tab
+              to="/admin/players"
+              icon={<Users className="size-4" />}
+              label="اللاعبين"
+            />
+            <Tab
+              to="/admin/funnel"
+              icon={<Filter className="size-4" />}
+              label="التحويل"
+            />
+            <Tab
+              to="/admin/messages"
+              icon={<MessageCircleHeart className="size-4" />}
+              label="الرسائل"
+            />
           </nav>
           <span className="text-sm text-muted-foreground" dir="ltr">
             {user.email}
@@ -61,13 +84,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Tab({ to, icon, label }: { to: '/admin' | '/admin/players' | '/admin/messages'; icon: React.ReactNode; label: string }) {
+function Tab({
+  to,
+  icon,
+  label,
+}: {
+  to: '/admin' | '/admin/players' | '/admin/funnel' | '/admin/messages'
+  icon: React.ReactNode
+  label: string
+}) {
   return (
     <Link
       to={to}
       activeOptions={{ exact: true }}
       className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-      activeProps={{ className: 'bg-primary/15 font-semibold !text-foreground' }}
+      activeProps={{
+        className: 'bg-primary/15 font-semibold !text-foreground',
+      }}
     >
       {icon} {label}
     </Link>
@@ -84,7 +117,12 @@ function LoginForm({ onDone }: { onDone: () => Promise<void> }) {
     setBusy(true)
     setError(null)
     try {
-      await loginAdmin({ data: { email: String(f.get('email')), password: String(f.get('password')) } })
+      await loginAdmin({
+        data: {
+          email: String(f.get('email')),
+          password: String(f.get('password')),
+        },
+      })
       await onDone()
     } catch {
       setError('الإيمايل ولا كلمة السر غالطين.')
@@ -98,15 +136,37 @@ function LoginForm({ onDone }: { onDone: () => Promise<void> }) {
       onSubmit={submit}
       className="mx-auto max-w-sm space-y-3 rounded-3xl border border-border bg-card/90 p-6"
     >
-      <h1 className="text-center font-display text-2xl font-bold">دخول الأدمين</h1>
-      <Input name="email" type="email" dir="ltr" required autoComplete="email" placeholder="email@example.com" className="h-12 rounded-xl" />
-      <Input name="password" type="password" dir="ltr" required autoComplete="current-password" placeholder="••••••••" className="h-12 rounded-xl" />
+      <h1 className="text-center font-display text-2xl font-bold">
+        دخول الأدمين
+      </h1>
+      <Input
+        name="email"
+        type="email"
+        dir="ltr"
+        required
+        autoComplete="email"
+        placeholder="email@example.com"
+        className="h-12 rounded-xl"
+      />
+      <Input
+        name="password"
+        type="password"
+        dir="ltr"
+        required
+        autoComplete="current-password"
+        placeholder="••••••••"
+        className="h-12 rounded-xl"
+      />
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
-      <Button type="submit" disabled={busy} className="btn-love h-12 w-full rounded-xl font-semibold">
+      <Button
+        type="submit"
+        disabled={busy}
+        className="btn-love h-12 w-full rounded-xl font-semibold"
+      >
         {busy ? 'لحظة…' : 'ادخل'}
       </Button>
     </form>
@@ -144,12 +204,21 @@ export function StatCard({
   className?: string
 }) {
   return (
-    <div className={cn('rounded-3xl border border-border bg-card/85 p-6', className)}>
+    <div
+      className={cn(
+        'rounded-3xl border border-border bg-card/85 p-6',
+        className,
+      )}
+    >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         {icon} {label}
-        {live && <span className="ms-auto size-2 animate-pulse rounded-full bg-emerald-400" />}
+        {live && (
+          <span className="ms-auto size-2 animate-pulse rounded-full bg-emerald-400" />
+        )}
       </div>
-      <div className="mt-3 font-display text-5xl font-bold tabular-nums">{value}</div>
+      <div className="mt-3 font-display text-5xl font-bold tabular-nums">
+        {value}
+      </div>
       <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
     </div>
   )
@@ -175,7 +244,9 @@ export function Segmented<T extends string | number>({
           onClick={() => onChange(o.value)}
           className={cn(
             'rounded-lg px-2.5 py-1 text-xs transition',
-            value === o.value ? 'bg-primary/20 font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+            value === o.value
+              ? 'bg-primary/20 font-semibold text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {o.label}

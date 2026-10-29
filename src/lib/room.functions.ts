@@ -1,9 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
+import { getRequestHeader } from '@tanstack/react-start/server'
 import { and, asc, eq, gt, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
 import { answers, events, players, rooms } from '../../db/schema'
+import { trafficSource } from './traffic'
 import { recordActivity } from './activity'
 import { authorize } from './room-auth'
 import { computeCompat } from './compat'
@@ -31,18 +33,22 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const ONLINE_MS = 9000
 // A date is one host and one guest; a friends room takes up to 7 people and starts when the host says so
 const MAX_PLAYERS = { date: 2, friends: 7 } as const
-const asMode = (m: string) => (m === 'friends' ? 'friends' : 'date') as 'date' | 'friends'
+const asMode = (m: string) =>
+  (m === 'friends' ? 'friends' : 'date') as 'date' | 'friends'
 
 function makeCode() {
   let c = ''
-  for (let i = 0; i < 6; i++) c += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+  for (let i = 0; i < 6; i++)
+    c += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
   return c
 }
 
 const later = (s: number) => new Date(Date.now() + s * 1000)
 
 const nameSchema = z.string().trim().min(1, 'اكتب اسمك').max(24)
-const genderSchema = z.enum(['male', 'female'], { error: 'اختار إنتي راجل ولا مرا' })
+const genderSchema = z.enum(['male', 'female'], {
+  error: 'اختار إنتي راجل ولا مرا',
+})
 const codeSchema = z
   .string()
   .trim()
@@ -54,7 +60,11 @@ const authSchema = z.object({ code: codeSchema, token: z.string().uuid() })
 type Room = typeof rooms.$inferSelect
 
 const guardOf = (room: Room) =>
-  and(eq(rooms.id, room.id), eq(rooms.phase, room.phase), eq(rooms.currentIndex, room.currentIndex))
+  and(
+    eq(rooms.id, room.id),
+    eq(rooms.phase, room.phase),
+    eq(rooms.currentIndex, room.currentIndex),
+  )
 
 /**
  * The update that opens question `index`. The first spin question waits for the wheel; the
@@ -62,10 +72,19 @@ const guardOf = (room: Room) =>
  */
 function open(room: Room, index: number) {
   if (roundFor(room.questionIds[index])?.kind !== 'spin') {
-    return { phase: 'question', currentIndex: index, phaseEndsAt: later(QUESTION_SECONDS) }
+    return {
+      phase: 'question',
+      currentIndex: index,
+      phaseEndsAt: later(QUESTION_SECONDS),
+    }
   }
   const chosen = Object.values(room.spins)[0]
-  if (chosen == null) return { phase: 'spin', currentIndex: index, phaseEndsAt: later(SPIN_SECONDS) }
+  if (chosen == null)
+    return {
+      phase: 'spin',
+      currentIndex: index,
+      phaseEndsAt: later(SPIN_SECONDS),
+    }
   return {
     phase: 'question',
     currentIndex: index,
@@ -76,7 +95,10 @@ function open(room: Room, index: number) {
 
 /** Turns the wheel: picks one player at random and starts the spinning animation. */
 async function spinWheel(room: Room) {
-  const roster = await db.select({ id: players.id }).from(players).where(eq(players.roomId, room.id))
+  const roster = await db
+    .select({ id: players.id })
+    .from(players)
+    .where(eq(players.roomId, room.id))
   const chosen = roster[Math.floor(Math.random() * roster.length)]
   if (!chosen) return
   await db
@@ -99,13 +121,22 @@ async function advance(room: Room) {
     // The host didn't turn the wheel in time: it turns by itself
     await spinWheel(room)
   } else if (room.phase === 'spinning') {
-    await db.update(rooms).set({ phase: 'question', phaseEndsAt: later(PRIVATE_SECONDS) }).where(guard)
+    await db
+      .update(rooms)
+      .set({ phase: 'question', phaseEndsAt: later(PRIVATE_SECONDS) })
+      .where(guard)
   } else if (room.phase === 'question') {
-    await db.update(rooms).set({ phase: 'reveal', phaseEndsAt: later(REVEAL_SECONDS) }).where(guard)
+    await db
+      .update(rooms)
+      .set({ phase: 'reveal', phaseEndsAt: later(REVEAL_SECONDS) })
+      .where(guard)
   } else if (room.phase === 'reveal') {
     const next = room.currentIndex + 1
     if (next >= room.questionIds.length) {
-      await db.update(rooms).set({ phase: 'done', phaseEndsAt: null, endedAt: new Date() }).where(guard)
+      await db
+        .update(rooms)
+        .set({ phase: 'done', phaseEndsAt: null, endedAt: new Date() })
+        .where(guard)
     } else {
       await db.update(rooms).set(open(room, next)).where(guard)
     }
@@ -120,45 +151,74 @@ export const createRoom = createServerFn({ method: 'POST' })
       mode: modeSchema.default('date'),
       // Question ids from the host's previous rooms, so a new room brings new questions
       seen: z.array(z.string().max(40)).max(800).default([]),
+      // The page the host came from, to work out where our players come from
+      ref: z.string().max(500).optional(),
     }),
   )
   .handler(async ({ data }) => {
     const questionIds = pickQuestionIds(data.mode, data.seen)
+    const source = trafficSource(data.ref, getRequestHeader('user-agent'))
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = makeCode()
       const [room] = await db
         .insert(rooms)
-        .values({ code, mode: data.mode, questionIds })
+        .values({ code, mode: data.mode, questionIds, source })
         .onConflictDoNothing()
         .returning()
       if (!room) continue
       const token = crypto.randomUUID()
-      await db.insert(players).values({ roomId: room.id, name: data.name, gender: data.gender, role: 'host', token })
+      await db
+        .insert(players)
+        .values({
+          roomId: room.id,
+          name: data.name,
+          gender: data.gender,
+          role: 'host',
+          token,
+        })
       return { code, token, questionIds }
     }
     throw new Error('صار مشكل، عاود جرّب')
   })
 
 export const joinRoom = createServerFn({ method: 'POST' })
-  .validator(z.object({ name: nameSchema, gender: genderSchema, code: codeSchema }))
+  .validator(
+    z.object({ name: nameSchema, gender: genderSchema, code: codeSchema }),
+  )
   .handler(async ({ data }) => {
     // The room row stays locked until the player is in, so two people can't take the last seat
     return db.transaction(async (tx) => {
-      const [room] = await tx.select().from(rooms).where(eq(rooms.code, data.code)).for('update').limit(1)
+      const [room] = await tx
+        .select()
+        .from(rooms)
+        .where(eq(rooms.code, data.code))
+        .for('update')
+        .limit(1)
       if (!room) throw new Error('الكود هذا غالط، ما فمّا حتى لعبة بيه')
       const mode = asMode(room.mode)
-      if (mode === 'friends' && room.phase !== 'waiting') throw new Error('اللعبة بدات، ما عادش تنجم تدخل')
+      if (mode === 'friends' && room.phase !== 'waiting')
+        throw new Error('اللعبة بدات، ما عادش تنجم تدخل')
       const [{ count }] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(players)
         .where(eq(players.roomId, room.id))
       if (count >= MAX_PLAYERS[mode]) {
         throw new Error(
-          mode === 'friends' ? 'اللعبة هذي كاملة، فيها 7 ديجا' : 'اللعبة هذي كاملة، فيها زوز لاعبين ديجا',
+          mode === 'friends'
+            ? 'اللعبة هذي كاملة، فيها 7 ديجا'
+            : 'اللعبة هذي كاملة، فيها زوز لاعبين ديجا',
         )
       }
       const token = crypto.randomUUID()
-      await tx.insert(players).values({ roomId: room.id, name: data.name, gender: data.gender, role: 'guest', token })
+      await tx
+        .insert(players)
+        .values({
+          roomId: room.id,
+          name: data.name,
+          gender: data.gender,
+          role: 'guest',
+          token,
+        })
       // A date starts as soon as the guest is in; friends wait for the host to press start
       if (mode === 'date') {
         await tx
@@ -172,10 +232,15 @@ export const joinRoom = createServerFn({ method: 'POST' })
 
 /** The host of a friends room starts the game once at least one friend has joined. */
 export const startRoom = createServerFn({ method: 'POST' })
-  .validator(authSchema.extend({ seen: z.array(z.string().max(40)).max(800).default([]) }))
+  .validator(
+    authSchema.extend({
+      seen: z.array(z.string().max(40)).max(800).default([]),
+    }),
+  )
   .handler(async ({ data }) => {
     const { room, player } = await authorize(data.code, data.token)
-    if (player.role !== 'host') throw new Error('اللي حلّ اللعبة هو اللي يبداها')
+    if (player.role !== 'host')
+      throw new Error('اللي حلّ اللعبة هو اللي يبداها')
     if (room.phase !== 'waiting') return { ok: true }
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -188,7 +253,10 @@ export const startRoom = createServerFn({ method: 'POST' })
         phase: 'intro',
         phaseEndsAt: later(INTRO_SECONDS),
         // Two friends can't vote for each other: they get regular questions instead
-        questionIds: count === 2 ? withoutVotes(room.questionIds, data.seen) : room.questionIds,
+        questionIds:
+          count === 2
+            ? withoutVotes(room.questionIds, data.seen)
+            : room.questionIds,
       })
       .where(and(eq(rooms.id, room.id), eq(rooms.phase, 'waiting')))
     return { ok: true }
@@ -199,7 +267,8 @@ export const spin = createServerFn({ method: 'POST' })
   .validator(authSchema)
   .handler(async ({ data }) => {
     const { room, player } = await authorize(data.code, data.token)
-    if (player.role !== 'host') throw new Error('اللي حلّ اللعبة هو اللي يدوّر العجلة')
+    if (player.role !== 'host')
+      throw new Error('اللي حلّ اللعبة هو اللي يدوّر العجلة')
     if (room.phase === 'spin') await spinWheel(room)
     return { ok: true }
   })
@@ -223,7 +292,9 @@ export const playJoker = createServerFn({ method: 'POST' })
     const [answered] = await db
       .select({ id: answers.id })
       .from(answers)
-      .where(and(eq(answers.roomId, room.id), eq(answers.questionIndex, data.index)))
+      .where(
+        and(eq(answers.roomId, room.id), eq(answers.questionIndex, data.index)),
+      )
       .limit(1)
     if (answered) throw new Error('جاوبت ديجا')
     const next = otherSpin(room.questionIds)
@@ -231,7 +302,9 @@ export const playJoker = createServerFn({ method: 'POST' })
     await db
       .update(rooms)
       .set({
-        questionIds: room.questionIds.map((q, i) => (i === data.index ? next : q)),
+        questionIds: room.questionIds.map((q, i) =>
+          i === data.index ? next : q,
+        ),
         joker: { index: data.index, skipped: id },
         phaseEndsAt: later(PRIVATE_SECONDS),
       })
@@ -240,28 +313,61 @@ export const playJoker = createServerFn({ method: 'POST' })
   })
 
 export const getRoomState = createServerFn({ method: 'POST' })
-  .validator(authSchema.extend({ sinceEventId: z.number().int().min(0).default(0) }))
+  .validator(
+    authSchema.extend({ sinceEventId: z.number().int().min(0).default(0) }),
+  )
   .handler(async ({ data }) => {
-    const { room: initialRoom, player: me } = await authorize(data.code, data.token)
-    await db.update(players).set({ lastSeenAt: new Date() }).where(eq(players.id, me.id))
+    const { room: initialRoom, player: me } = await authorize(
+      data.code,
+      data.token,
+    )
+    await db
+      .update(players)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(players.id, me.id))
     await recordActivity()
     await advance(initialRoom)
 
-    const [room] = await db.select().from(rooms).where(eq(rooms.id, initialRoom.id))
+    const [room] = await db
+      .select()
+      .from(rooms)
+      .where(eq(rooms.id, initialRoom.id))
     const mode = asMode(room.mode)
-    const roster = await db.select().from(players).where(eq(players.roomId, room.id)).orderBy(asc(players.id))
+    const roster = await db
+      .select()
+      .from(players)
+      .where(eq(players.roomId, room.id))
+      .orderBy(asc(players.id))
     const others = roster.filter((p) => p.id !== me.id)
     const og = othersGender(others.map((p) => p.gender))
-    const allAnswers = await db.select().from(answers).where(eq(answers.roomId, room.id))
+    const allAnswers = await db
+      .select()
+      .from(answers)
+      .where(eq(answers.roomId, room.id))
     const answerOf = (playerId: number, i: number) =>
       allAnswers.find((a) => a.playerId === playerId && a.questionIndex === i)
     const otherEvents = await db
-      .select({ id: events.id, playerId: events.playerId, type: events.type, createdAt: events.createdAt })
+      .select({
+        id: events.id,
+        playerId: events.playerId,
+        type: events.type,
+        createdAt: events.createdAt,
+      })
       .from(events)
-      .where(and(eq(events.roomId, room.id), ne(events.playerId, me.id), gt(events.id, data.sinceEventId)))
+      .where(
+        and(
+          eq(events.roomId, room.id),
+          ne(events.playerId, me.id),
+          gt(events.id, data.sinceEventId),
+        ),
+      )
 
     const playerById = new Map(roster.map((p) => [p.id, p]))
-    const pub = (p: (typeof roster)[number]) => ({ id: p.id, name: p.name, gender: p.gender })
+    const pub = (p: (typeof roster)[number]) => ({
+      id: p.id,
+      name: p.name,
+      gender: p.gender,
+    })
     // The player the wheel landed on for question i
     const chosenAt = (i: number) => {
       const id = room.spins[i]
@@ -312,7 +418,10 @@ export const getRoomState = createServerFn({ method: 'POST' })
         history.push({
           index: i,
           kind: round.kind,
-          text: round.kind === 'spin' ? personalize(round.text, chosen?.gender, null) : round.text,
+          text:
+            round.kind === 'spin'
+              ? personalize(round.text, chosen?.gender, null)
+              : round.text,
           category: ROUND_LABEL[round.kind],
           mine: mine?.text ?? null,
           theirs: [],
@@ -334,7 +443,11 @@ export const getRoomState = createServerFn({ method: 'POST' })
       const sameWith = q.marriage
         ? []
         : others
-            .filter((o) => mine?.optionIndex != null && answerOf(o.id, i)?.optionIndex === mine.optionIndex)
+            .filter(
+              (o) =>
+                mine?.optionIndex != null &&
+                answerOf(o.id, i)?.optionIndex === mine.optionIndex,
+            )
             .map((o) => o.id)
       history.push({
         index: i,
@@ -344,7 +457,11 @@ export const getRoomState = createServerFn({ method: 'POST' })
         mine: mine?.text ?? null,
         theirs: others.map((o) => {
           const a = q.marriage ? undefined : answerOf(o.id, i)
-          return { id: o.id, text: a?.text ?? null, option: a?.optionIndex ?? null }
+          return {
+            id: o.id,
+            text: a?.text ?? null,
+            option: a?.optionIndex ?? null,
+          }
         }),
         options: q.marriage ? [] : q.options,
         myOption: mine?.optionIndex ?? null,
@@ -369,7 +486,11 @@ export const getRoomState = createServerFn({ method: 'POST' })
         current = {
           index: room.currentIndex,
           kind: round?.kind ?? ('question' as const),
-          text: round ? (round.kind === 'spin' ? personalize(round.text, chosen?.gender, null) : round.text) : q!.text,
+          text: round
+            ? round.kind === 'spin'
+              ? personalize(round.text, chosen?.gender, null)
+              : round.text
+            : q!.text,
           category: round ? ROUND_LABEL[round.kind] : categoryLabel(q!.cat, og),
           options: q?.options ?? [],
           // Votes: the names to choose from (never yourself)
@@ -384,7 +505,9 @@ export const getRoomState = createServerFn({ method: 'POST' })
           finale: q?.finale ?? false,
           myAnswer: answerOf(me.id, room.currentIndex)?.text ?? null,
           // Who already answered (not what)
-          answeredIds: others.filter((o) => answerOf(o.id, room.currentIndex)).map((o) => o.id),
+          answeredIds: others
+            .filter((o) => answerOf(o.id, room.currentIndex))
+            .map((o) => o.id),
         }
       }
     }
@@ -396,7 +519,8 @@ export const getRoomState = createServerFn({ method: 'POST' })
             index: room.currentIndex,
             players: roster.map(pub),
             spinning: room.phase === 'spinning',
-            chosen: room.phase === 'spinning' ? chosenAt(room.currentIndex) : null,
+            chosen:
+              room.phase === 'spinning' ? chosenAt(room.currentIndex) : null,
           }
         : null
 
@@ -410,16 +534,26 @@ export const getRoomState = createServerFn({ method: 'POST' })
     return {
       code: room.code,
       mode,
-      phase: room.phase as 'waiting' | 'intro' | 'spin' | 'spinning' | 'question' | 'reveal' | 'done',
+      phase: room.phase as
+        | 'waiting'
+        | 'intro'
+        | 'spin'
+        | 'spinning'
+        | 'question'
+        | 'reveal'
+        | 'done',
       index: room.currentIndex,
       total: room.questionIds.length,
       // What each question is, for the progress bar
-      kinds: room.questionIds.map((id) =>
-        roundFor(id)?.kind ?? (questionFor(id, null)?.finale ? 'finale' : 'question'),
+      kinds: room.questionIds.map(
+        (id) =>
+          roundFor(id)?.kind ??
+          (questionFor(id, null)?.finale ? 'finale' : 'question'),
       ),
       phaseEndsAt: room.phaseEndsAt?.toISOString() ?? null,
       serverNow: new Date().toISOString(),
-      questionSeconds: current?.kind === 'spin' ? PRIVATE_SECONDS : QUESTION_SECONDS,
+      questionSeconds:
+        current?.kind === 'spin' ? PRIVATE_SECONDS : QUESTION_SECONDS,
       spinSeconds: SPIN_SECONDS,
       maxPlayers: MAX_PLAYERS[mode],
       me: { id: me.id, name: me.name, role: me.role, gender: me.gender },
@@ -429,7 +563,10 @@ export const getRoomState = createServerFn({ method: 'POST' })
       current,
       wheel,
       history,
-      partnerEvents: otherEvents.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
+      partnerEvents: otherEvents.map((e) => ({
+        ...e,
+        createdAt: e.createdAt.toISOString(),
+      })),
     }
   })
 
@@ -461,33 +598,50 @@ export const submitAnswer = createServerFn({ method: 'POST' })
       if (!target) throw new Error('اختار واحد من صحابك')
       value = { optionIndex: null, text: target.name, voteFor: target.id }
     } else if (round?.kind === 'spin') {
-      if (room.spins[data.index] !== player.id) throw new Error('موش دورك، العجلة ما وقفتش عليك')
+      if (room.spins[data.index] !== player.id)
+        throw new Error('موش دورك، العجلة ما وقفتش عليك')
       if (!data.text) throw new Error('اكتب جوابك')
       value = { optionIndex: null, text: data.text }
     } else {
       // The saved text is shown to the others as is, so it's worded for their gender
-      const q = questionFor(id, player.gender, othersGender(others.map((o) => o.gender)))
-      const picked = data.optionIndex != null ? q?.options[data.optionIndex] : undefined
+      const q = questionFor(
+        id,
+        player.gender,
+        othersGender(others.map((o) => o.gender)),
+      )
+      const picked =
+        data.optionIndex != null ? q?.options[data.optionIndex] : undefined
       const text = picked ?? data.text.slice(0, 200)
       if (!text) throw new Error('اكتب جوابك')
       value = { optionIndex: picked != null ? data.optionIndex : null, text }
     }
     await db
       .insert(answers)
-      .values({ roomId: room.id, playerId: player.id, questionIndex: data.index, ...value })
+      .values({
+        roomId: room.id,
+        playerId: player.id,
+        questionIndex: data.index,
+        ...value,
+      })
       .onConflictDoNothing()
 
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(answers)
-      .where(and(eq(answers.roomId, room.id), eq(answers.questionIndex, data.index)))
+      .where(
+        and(eq(answers.roomId, room.id), eq(answers.questionIndex, data.index)),
+      )
     // Everyone answered (on a spin, the one player who had to): no need to wait for the timer
     if (round?.kind === 'spin' || count >= others.length + 1) {
       await db
         .update(rooms)
         .set({ phase: 'reveal', phaseEndsAt: later(REVEAL_SECONDS) })
         .where(
-          and(eq(rooms.id, room.id), eq(rooms.phase, 'question'), eq(rooms.currentIndex, data.index)),
+          and(
+            eq(rooms.id, room.id),
+            eq(rooms.phase, 'question'),
+            eq(rooms.currentIndex, data.index),
+          ),
         )
     }
     return { ok: true }
@@ -497,7 +651,9 @@ export const reportScreenshot = createServerFn({ method: 'POST' })
   .validator(authSchema)
   .handler(async ({ data }) => {
     const { room, player } = await authorize(data.code, data.token)
-    await db.insert(events).values({ roomId: room.id, playerId: player.id, type: 'screenshot' })
+    await db
+      .insert(events)
+      .values({ roomId: room.id, playerId: player.id, type: 'screenshot' })
     return { ok: true }
   })
 
@@ -506,17 +662,34 @@ export const getMyResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { room, player: me } = await authorize(data.code, data.token)
     if (room.phase !== 'done') throw new Error('مازال ما كمّلتوش الأسئلة')
-    const roster = await db.select().from(players).where(eq(players.roomId, room.id)).orderBy(asc(players.id))
+    const roster = await db
+      .select()
+      .from(players)
+      .where(eq(players.roomId, room.id))
+      .orderBy(asc(players.id))
     const partner = roster.find((p) => p.id !== me.id)
     if (!partner) throw new Error('ما فمّاش لاعب ثاني')
-    const all = await db.select().from(answers).where(eq(answers.roomId, room.id))
+    const all = await db
+      .select()
+      .from(answers)
+      .where(eq(answers.roomId, room.id))
     const lite = (pid: number) =>
       all
         .filter((a) => a.playerId === pid)
-        .map((a) => ({ questionIndex: a.questionIndex, optionIndex: a.optionIndex, text: a.text }))
+        .map((a) => ({
+          questionIndex: a.questionIndex,
+          optionIndex: a.optionIndex,
+          text: a.text,
+        }))
     const mode = asMode(room.mode)
     // Votes (anonymous counts) and the answers of the players the wheel picked
-    const rounds = computeRounds(room.questionIds, roster, all, room.spins, room.joker)
+    const rounds = computeRounds(
+      room.questionIds,
+      roster,
+      all,
+      room.spins,
+      room.joker,
+    )
     // Three friends or more: a report on the whole group instead of one partner
     if (roster.length > 2) {
       return {
@@ -524,13 +697,20 @@ export const getMyResult = createServerFn({ method: 'POST' })
         mode,
         ...computeGroupReport(
           room.questionIds,
-          roster.map((p) => ({ id: p.id, name: p.name, gender: p.gender, answers: lite(p.id) })),
+          roster.map((p) => ({
+            id: p.id,
+            name: p.name,
+            gender: p.gender,
+            answers: lite(p.id),
+          })),
           me.id,
         ),
         ...rounds,
       }
     }
-    const hasMarriage = room.questionIds.some((id) => questionFor(id, null)?.marriage)
+    const hasMarriage = room.questionIds.some(
+      (id) => questionFor(id, null)?.marriage,
+    )
     return {
       kind: 'pair' as const,
       mode,
@@ -545,7 +725,11 @@ export const getMyResult = createServerFn({ method: 'POST' })
         ? computeMarriageReport(
             room.questionIds,
             { name: me.name, gender: me.gender, answers: lite(me.id) },
-            { name: partner.name, gender: partner.gender, answers: lite(partner.id) },
+            {
+              name: partner.name,
+              gender: partner.gender,
+              answers: lite(partner.id),
+            },
           )
         : null,
       ...rounds,
@@ -556,10 +740,18 @@ export const getMyResult = createServerFn({ method: 'POST' })
 export const getRoomPreview = createServerFn({ method: 'GET' })
   .validator(z.object({ code: codeSchema }))
   .handler(async ({ data }) => {
-    const [room] = await db.select().from(rooms).where(eq(rooms.code, data.code)).limit(1)
+    const [room] = await db
+      .select()
+      .from(rooms)
+      .where(eq(rooms.code, data.code))
+      .limit(1)
     if (!room) return null
     const roster = await db
-      .select({ name: players.name, role: players.role, gender: players.gender })
+      .select({
+        name: players.name,
+        role: players.role,
+        gender: players.gender,
+      })
       .from(players)
       .where(eq(players.roomId, room.id))
     const host = roster.find((p) => p.role === 'host')

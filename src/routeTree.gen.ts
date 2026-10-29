@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SirRouteImport } from './routes/sir'
+import { Route as AdminFunnelRouteImport } from './routes/admin_.funnel'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
@@ -37,6 +38,11 @@ const SirRoute = SirRouteImport.update({
   path: '/sir',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminFunnelRoute = AdminFunnelRouteImport.update({
+  id: '/admin_/funnel',
+  path: '/admin/funnel',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminMessagesRoute = AdminMessagesRouteImport.update({
   id: '/admin_/messages',
   path: '/admin/messages',
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin_/funnel': typeof AdminFunnelRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
   '/room/$code': typeof RoomCodeRoute
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
     | '/room/$code'
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
     | '/room/$code'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/admin_/funnel'
     | '/admin_/messages'
     | '/admin_/players'
     | '/room/$code'
@@ -116,6 +128,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   PrivacyRoute: typeof PrivacyRoute
   SirRoute: typeof SirRoute
+  AdminFunnelRoute: typeof AdminFunnelRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
   RoomCodeRoute: typeof RoomCodeRoute
@@ -151,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SirRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/funnel': {
+      id: '/admin_/funnel'
+      path: '/admin/funnel'
+      fullPath: '/admin/funnel'
+      preLoaderRoute: typeof AdminFunnelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin_/messages': {
       id: '/admin_/messages'
       path: '/admin/messages'
@@ -180,6 +200,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   PrivacyRoute: PrivacyRoute,
   SirRoute: SirRoute,
+  AdminFunnelRoute: AdminFunnelRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
   RoomCodeRoute: RoomCodeRoute,
