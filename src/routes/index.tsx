@@ -357,7 +357,16 @@ function StartCard() {
       const res =
         tab === 'create'
           ? await createRoom({
-              data: { name, gender, mode, seen: getSeenQuestions() },
+              data: {
+                name,
+                gender,
+                mode,
+                seen: getSeenQuestions(),
+                ref:
+                  typeof document !== 'undefined'
+                    ? document.referrer
+                    : undefined,
+              },
             })
           : await joinRoom({ data: { name, gender, code } })
       addSeenQuestions(res.questionIds)

@@ -26,7 +26,11 @@ export const rooms = pgTable('rooms', {
   joker: jsonb().$type<{ index: number; skipped: string }>(),
   // When the game finished: the voice chat stays open for a few minutes after it
   endedAt: timestamp('ended_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // Where the host came from when the room was created (instagram, google, direct…), for the funnel
+  source: text(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 })
 
 export const players = pgTable(
@@ -40,8 +44,12 @@ export const players = pgTable(
     role: text().notNull(), // 'host' | 'guest'
     gender: text(), // 'male' | 'female'; null for players who joined before it was asked
     token: text().notNull().unique(),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     // A date room has one guest, a friends room up to 6 more: the limit is checked in joinRoom
@@ -64,11 +72,17 @@ export const answers = pgTable(
     questionIndex: integer('question_index').notNull(),
     optionIndex: integer('option_index'), // null when the answer is free text or a vote
     // The player voted for, on vote questions
-    voteFor: integer('vote_for').references(() => players.id, { onDelete: 'cascade' }),
+    voteFor: integer('vote_for').references(() => players.id, {
+      onDelete: 'cascade',
+    }),
     text: text().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [uniqueIndex('answers_player_question_idx').on(t.playerId, t.questionIndex)],
+  (t) => [
+    uniqueIndex('answers_player_question_idx').on(t.playerId, t.questionIndex),
+  ],
 )
 
 // Room events such as screenshot attempts, shown to the other player
@@ -83,7 +97,9 @@ export const events = pgTable(
       .notNull()
       .references(() => players.id, { onDelete: 'cascade' }),
     type: text().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('events_room_idx').on(t.roomId)],
 )
@@ -111,7 +127,12 @@ export type VoiceSignal = {
   type: 'offer' | 'answer' | 'ice' | 'hello'
   sid: string
   sdp?: string
-  candidate?: { candidate?: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null }
+  candidate?: {
+    candidate?: string
+    sdpMid?: string | null
+    sdpMLineIndex?: number | null
+    usernameFragment?: string | null
+  }
 }
 
 // WebRTC setup messages (offer, answer, ICE candidates) passed between two players of a room.
@@ -130,9 +151,14 @@ export const voiceSignals = pgTable(
       .notNull()
       .references(() => players.id, { onDelete: 'cascade' }),
     data: jsonb().$type<VoiceSignal>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [index('voice_signals_to_idx').on(t.toId, t.id), index('voice_signals_room_idx').on(t.roomId)],
+  (t) => [
+    index('voice_signals_to_idx').on(t.toId, t.id),
+    index('voice_signals_room_idx').on(t.roomId),
+  ],
 )
 
 // Messages sent through the public /sir link to the admins. The sender gives their Instagram
@@ -146,7 +172,9 @@ export const secretMessages = pgTable(
     source: text(),
     body: text().notNull(),
     readAt: timestamp('read_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index('secret_messages_created_idx').on(t.createdAt)],
 )

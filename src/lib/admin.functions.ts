@@ -3,7 +3,13 @@ import { and, asc, desc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
-import { activityMinutes, answers, players, rooms, voiceMembers } from '../../db/schema'
+import {
+  activityMinutes,
+  answers,
+  players,
+  rooms,
+  voiceMembers,
+} from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 import { type AnswerLite, computeCompat } from './compat'
 
@@ -17,52 +23,63 @@ const DAYS = 90
 const MIN_TOGETHER = 3
 
 /** The signed-in admin, or null. */
-export const getAdminUser = createServerFn({ method: 'GET' }).handler(async () => {
-  const email = getAdminEmail()
-  return email ? { email, isAdmin: true } : null
-})
+export const getAdminUser = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const email = getAdminEmail()
+    return email ? { email, isAdmin: true } : null
+  },
+)
 
 export const loginAdmin = createServerFn({ method: 'POST' })
-  .validator(z.object({ email: z.string().max(200), password: z.string().max(200) }))
+  .validator(
+    z.object({ email: z.string().max(200), password: z.string().max(200) }),
+  )
   .handler(async ({ data }) => {
-    if (!adminLogin(data.email, data.password)) throw new Error('invalid credentials')
+    if (!adminLogin(data.email, data.password))
+      throw new Error('invalid credentials')
   })
 
-export const logoutAdmin = createServerFn({ method: 'POST' }).handler(async () => {
-  adminLogout()
-})
+export const logoutAdmin = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    adminLogout()
+  },
+)
 
-export const getAdminStats = createServerFn({ method: 'GET' }).handler(async () => {
-  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+export const getAdminStats = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
 
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(players)
-  const [{ active }] = await db
-    .select({ active: sql<number>`count(*)::int` })
-    .from(players)
-    .where(gt(players.lastSeenAt, new Date(Date.now() - ACTIVE_MS)))
-  const [{ lastHour }] = await db
-    .select({ lastHour: sql<number>`count(*)::int` })
-    .from(players)
-    .where(gt(players.lastSeenAt, new Date(Date.now() - HOUR_MS)))
-  // Every game where someone polled in the last hour, newest game first (a stable order, so
-  // rows don't jump around on each refresh)
-  const hourAgo = new Date(Date.now() - HOUR_MS)
-  const recent = await listGames(
-    sql`exists (select 1 from ${players} where ${players.roomId} = ${rooms.id} and ${players.lastSeenAt} > ${hourAgo})`,
-    100,
-  )
-  return {
-    total,
-    active,
-    lastHour,
-    today: await emptyToday(),
-    games: await gamesByMode(),
-    match: await matchStats(),
-    days: await dailyStats(),
-    recent,
-    at: new Date().toISOString(),
-  }
-})
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(players)
+    const [{ active }] = await db
+      .select({ active: sql<number>`count(*)::int` })
+      .from(players)
+      .where(gt(players.lastSeenAt, new Date(Date.now() - ACTIVE_MS)))
+    const [{ lastHour }] = await db
+      .select({ lastHour: sql<number>`count(*)::int` })
+      .from(players)
+      .where(gt(players.lastSeenAt, new Date(Date.now() - HOUR_MS)))
+    // Every game where someone polled in the last hour, newest game first (a stable order, so
+    // rows don't jump around on each refresh)
+    const hourAgo = new Date(Date.now() - HOUR_MS)
+    const recent = await listGames(
+      sql`exists (select 1 from ${players} where ${players.roomId} = ${rooms.id} and ${players.lastSeenAt} > ${hourAgo})`,
+      100,
+    )
+    return {
+      total,
+      active,
+      lastHour,
+      today: await emptyToday(),
+      games: await gamesByMode(),
+      match: await matchStats(),
+      days: await dailyStats(),
+      recent,
+      at: new Date().toISOString(),
+    }
+  },
+)
 
 type Mode = 'date' | 'friends'
 const asMode = (m: string): Mode => (m === 'friends' ? 'friends' : 'date')
@@ -72,7 +89,11 @@ const asMode = (m: string): Mode => (m === 'friends' ? 'friends' : 'date')
  * their compatibility, for friends every pair's score and the group average. computeCompat is
  * nearly symmetric, so both directions are averaged. Null until they answered enough together.
  */
-function matchOf(mode: Mode, qids: string[], members: { id: number; name: string; answers: AnswerLite[] }[]) {
+function matchOf(
+  mode: Mode,
+  qids: string[],
+  members: { id: number; name: string; answers: AnswerLite[] }[],
+) {
   const pairs: { a: string; b: string; score: number }[] = []
   for (let i = 0; i < members.length; i++) {
     for (let j = i + 1; j < members.length; j++) {
@@ -80,12 +101,19 @@ function matchOf(mode: Mode, qids: string[], members: { id: number; name: string
       const ab = computeCompat(qids, a.answers, b.answers, { mode })
       if (ab.answeredTogether < MIN_TOGETHER) continue
       const ba = computeCompat(qids, b.answers, a.answers, { mode })
-      pairs.push({ a: a.name, b: b.name, score: Math.round((ab.score + ba.score) / 2) })
+      pairs.push({
+        a: a.name,
+        b: b.name,
+        score: Math.round((ab.score + ba.score) / 2),
+      })
     }
   }
   if (!pairs.length) return null
   pairs.sort((x, y) => y.score - x.score)
-  return { score: Math.round(pairs.reduce((n, p) => n + p.score, 0) / pairs.length), pairs }
+  return {
+    score: Math.round(pairs.reduce((n, p) => n + p.score, 0) / pairs.length),
+    pairs,
+  }
 }
 
 /** Every answer of these rooms, by room and player. */
@@ -103,7 +131,8 @@ async function answersOf(roomIds: number[]) {
         .where(inArray(answers.roomId, roomIds))
     : []
   const byPlayer = new Map<number, AnswerLite[]>()
-  for (const a of rows) byPlayer.set(a.playerId, [...(byPlayer.get(a.playerId) ?? []), a])
+  for (const a of rows)
+    byPlayer.set(a.playerId, [...(byPlayer.get(a.playerId) ?? []), a])
   return (playerId: number) => byPlayer.get(playerId) ?? []
 }
 
@@ -134,7 +163,12 @@ async function listGames(where: SQL | undefined, limit: number) {
           lastSeenAt: players.lastSeenAt,
         })
         .from(players)
-        .where(inArray(players.roomId, rows.map((r) => r.id)))
+        .where(
+          inArray(
+            players.roomId,
+            rows.map((r) => r.id),
+          ),
+        )
         .orderBy(asc(players.id))
     : []
   const answersFor = await answersOf(rows.map((r) => r.id))
@@ -142,12 +176,19 @@ async function listGames(where: SQL | undefined, limit: number) {
     const roster = people.filter((p) => p.roomId === r.id)
     const mode = asMode(r.mode)
     return {
-    ...r,
-    mode,
-    createdAt: r.createdAt.toISOString(),
-    match: matchOf(mode, questionIds, roster.map((p) => ({ id: p.id, name: p.name, answers: answersFor(p.id) }))),
-    players: roster
-      .map((p) => ({
+      ...r,
+      mode,
+      createdAt: r.createdAt.toISOString(),
+      match: matchOf(
+        mode,
+        questionIds,
+        roster.map((p) => ({
+          id: p.id,
+          name: p.name,
+          answers: answersFor(p.id),
+        })),
+      ),
+      players: roster.map((p) => ({
         id: p.id,
         name: p.name,
         gender: p.gender,
@@ -181,7 +222,10 @@ export const getAdminGames = createServerFn({ method: 'GET' })
     }
     // One extra row tells the page whether there are more to load
     const games = await listGames(and(...conditions), data.limit + 1)
-    return { games: games.slice(0, data.limit), more: games.length > data.limit }
+    return {
+      games: games.slice(0, data.limit),
+      more: games.length > data.limit,
+    }
   })
 
 /**
@@ -189,7 +233,11 @@ export const getAdminGames = createServerFn({ method: 'GET' })
  * activity tracking started count; `since` is null when there is no data for today yet.
  */
 async function emptyToday() {
-  const rows = await db.execute<{ since: Date | null; empty: number; last_empty: Date | null }>(sql`
+  const rows = await db.execute<{
+    since: Date | null
+    empty: number
+    last_empty: Date | null
+  }>(sql`
     with bounds as (
       select greatest(
         date_trunc('day', now() at time zone ${TZ}) at time zone ${TZ},
@@ -234,7 +282,8 @@ async function gamesByMode() {
 /** Players and games started each day, plus how many minutes had someone on the site. */
 async function dailyStats() {
   const from = new Date(Date.now() - DAYS * 24 * HOUR_MS)
-  const byDay = (column: unknown) => sql<string>`to_char(${column} at time zone ${TZ}, 'YYYY-MM-DD')`
+  const byDay = (column: unknown) =>
+    sql<string>`to_char(${column} at time zone ${TZ}, 'YYYY-MM-DD')`
   const count = sql<number>`count(*)::int`
 
   const [playerRows, roomRows, minuteRows] = await Promise.all([
@@ -263,14 +312,17 @@ async function dailyStats() {
       .where(gt(activityMinutes.minute, from))
       .groupBy(sql`1`),
   ])
-  const toMap = (rows: { day: string; n: number }[]) => new Map(rows.map((r) => [r.day, r.n]))
+  const toMap = (rows: { day: string; n: number }[]) =>
+    new Map(rows.map((r) => [r.day, r.n]))
   const p = toMap(playerRows)
   const r = toMap(roomRows)
   const f = new Map(roomRows.map((row) => [row.day, row.friends]))
   const pf = new Map(playerRows.map((row) => [row.day, row.friends]))
   const m = toMap(minuteRows)
 
-  const days = [...new Set([...p.keys(), ...r.keys(), ...m.keys()])].sort().reverse()
+  const days = [...new Set([...p.keys(), ...r.keys(), ...m.keys()])]
+    .sort()
+    .reverse()
   return days.map((day) => ({
     day,
     players: p.get(day) ?? 0,
@@ -285,7 +337,10 @@ async function dailyStats() {
 
 // Match % buckets, the same cut-offs as the verdict in the players' report
 const BUCKETS = [80, 65, 50, 0] as const
-let matchCache: { at: number; value: Awaited<ReturnType<typeof computeMatchStats>> } | null = null
+let matchCache: {
+  at: number
+  value: Awaited<ReturnType<typeof computeMatchStats>>
+} | null = null
 
 /** Average match % of finished games, couples and friends apart. Cached for a minute. */
 async function matchStats() {
@@ -303,13 +358,20 @@ async function computeMatchStats() {
     ? await db
         .select({ id: players.id, roomId: players.roomId, name: players.name })
         .from(players)
-        .where(inArray(players.roomId, done.map((r) => r.id)))
+        .where(
+          inArray(
+            players.roomId,
+            done.map((r) => r.id),
+          ),
+        )
     : []
   const answersFor = await answersOf(done.map((r) => r.id))
   const scores = { date: [] as number[], friends: [] as number[] }
   for (const r of done) {
     const mode = asMode(r.mode)
-    const members = roster.filter((p) => p.roomId === r.id).map((p) => ({ ...p, answers: answersFor(p.id) }))
+    const members = roster
+      .filter((p) => p.roomId === r.id)
+      .map((p) => ({ ...p, answers: answersFor(p.id) }))
     const m = matchOf(mode, r.questionIds, members)
     if (!m) continue
     // A couple counts once; a group counts each of its pairs
@@ -318,12 +380,15 @@ async function computeMatchStats() {
   }
   const summary = (list: number[]) => ({
     count: list.length,
-    average: list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : null,
+    average: list.length
+      ? Math.round(list.reduce((a, b) => a + b, 0) / list.length)
+      : null,
     best: list.length ? Math.max(...list) : null,
     buckets: BUCKETS.map((from, i) => ({
       from,
       to: i === 0 ? 100 : BUCKETS[i - 1] - 1,
-      count: list.filter((s) => s >= from && (i === 0 || s < BUCKETS[i - 1])).length,
+      count: list.filter((s) => s >= from && (i === 0 || s < BUCKETS[i - 1]))
+        .length,
     })),
   })
   return { date: summary(scores.date), friends: summary(scores.friends) }
@@ -332,11 +397,75 @@ async function computeMatchStats() {
 // Same window as the voice chat: a member who stopped syncing for longer has left the call
 const VOICE_MS = 7000
 
+/**
+ * The completion funnel (created → partner joined → played → reached the report) and where the
+ * rooms came from, over the last `days`. Shows where players drop off and which channel brings them.
+ */
+export const getAdminFunnel = createServerFn({ method: 'GET' })
+  .validator(z.object({ days: z.number().int().min(1).max(365).default(30) }))
+  .handler(async ({ data }) => {
+    if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+    const from = new Date(Date.now() - data.days * 24 * 60 * 60 * 1000)
+
+    const roomRows = await db
+      .select({ id: rooms.id, phase: rooms.phase, source: rooms.source })
+      .from(rooms)
+      .where(gt(rooms.createdAt, from))
+    const ids = roomRows.map((r) => r.id)
+
+    const [playerCounts, answered] = ids.length
+      ? await Promise.all([
+          db
+            .select({ roomId: players.roomId, n: sql<number>`count(*)::int` })
+            .from(players)
+            .where(inArray(players.roomId, ids))
+            .groupBy(players.roomId),
+          db
+            .selectDistinct({ roomId: answers.roomId })
+            .from(answers)
+            .where(inArray(answers.roomId, ids)),
+        ])
+      : [[], []]
+
+    const joined = new Set(
+      playerCounts.filter((p) => p.n >= 2).map((p) => p.roomId),
+    ).size
+    const played = new Set(answered.map((a) => a.roomId)).size
+    const finished = roomRows.filter((r) => r.phase === 'done').length
+
+    const funnel = [
+      { key: 'created', count: roomRows.length },
+      { key: 'joined', count: joined },
+      { key: 'played', count: played },
+      { key: 'finished', count: finished },
+    ]
+
+    const bySource = new Map<string, { count: number; finished: number }>()
+    for (const r of roomRows) {
+      const key = r.source || 'unknown'
+      const cur = bySource.get(key) ?? { count: 0, finished: 0 }
+      cur.count++
+      if (r.phase === 'done') cur.finished++
+      bySource.set(key, cur)
+    }
+    const sources = [...bySource.entries()]
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => b.count - a.count)
+
+    return { days: data.days, funnel, sources }
+  })
+
 /** Who is in a voice call right now: muted or not, talking or not. Polled every 2 seconds by the games lists. */
-export const getAdminVoice = createServerFn({ method: 'GET' }).handler(async () => {
-  if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
-  return db
-    .select({ id: voiceMembers.playerId, muted: voiceMembers.muted, speaking: voiceMembers.speaking })
-    .from(voiceMembers)
-    .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
-})
+export const getAdminVoice = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+    return db
+      .select({
+        id: voiceMembers.playerId,
+        muted: voiceMembers.muted,
+        speaking: voiceMembers.speaking,
+      })
+      .from(voiceMembers)
+      .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
+  },
+)
