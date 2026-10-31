@@ -14,6 +14,7 @@ import {
 
 import { GenderPicker } from '@/components/gender-picker'
 import { Logo } from '@/components/logo'
+import { RoomMusic } from '@/components/room-music'
 import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,6 +43,7 @@ import {
 } from '@/lib/session'
 import { rewardedAdsEnabled, showRewardedAd } from '@/lib/rewarded-ad'
 import { useScreenshotGuard } from '@/lib/use-screenshot-guard'
+import { useVoice } from '@/lib/use-voice'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/room/$code')({
@@ -360,6 +362,7 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
     token,
   )
   const remaining = useCountdown(state?.phaseEndsAt, offset)
+  const voice = useVoice(code, token)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
@@ -564,6 +567,7 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 )}
               </div>
             </div>
+            {!friends && <RoomMusic ducked={voice.talking.length > 0} />}
             {sameCount > 0 && (
               <span
                 className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-semibold text-emerald-300 tabular-nums"
@@ -614,7 +618,7 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
               />
             ))}
           </div>
-          <VoiceBar code={code} token={token} me={state.me} others={others} />
+          <VoiceBar voice={voice} me={state.me} others={others} />
         </header>
 
         {/* Messages */}
