@@ -7,7 +7,16 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="15" fill="url(#love)"/>
-  <g transform="translate(8 8) scale(2)">
+  <g transform="translate(8 7) scale(2)">
     <path fill="#ffffff" d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+  </g>
+  <!-- Tunisian flag badge, bottom corner (ringed so it reads against the red) -->
+  <rect x="0" y="41" width="33" height="22.5" rx="6.5" fill="#0c1222"/>
+  <g transform="translate(2.5 43.3) scale(0.933)">
+    <rect width="30" height="20" rx="2.5" fill="#E70013"/>
+    <circle cx="15" cy="10" r="5" fill="#fff"/>
+    <circle cx="15" cy="10" r="3.75" fill="#E70013"/>
+    <circle cx="15.95" cy="10" r="3" fill="#fff"/>
+    <polygon fill="#E70013" points="13.95,10.00 15.47,9.47 15.50,7.86 16.48,9.14 18.02,8.68 17.10,10.00 18.02,11.32 16.48,10.86 15.50,12.14 15.47,10.53"/>
   </g>
 </svg>
