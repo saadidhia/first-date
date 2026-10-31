@@ -11,17 +11,14 @@ const g = (gender: string | null | undefined, male: string, female: string) =>
 
 /** The room's voice chat: everyone hears the call, one mic button to talk, and who is talking right now. */
 export function VoiceBar({
-  code,
-  token,
+  voice,
   me,
   others,
 }: {
-  code: string
-  token: string
+  voice: ReturnType<typeof useVoice>
   me: Person
   others: Person[]
 }) {
-  const voice = useVoice(code, token)
   const left = useSecondsLeft(voice.closesAt)
   if (!voice.open) return null
 
