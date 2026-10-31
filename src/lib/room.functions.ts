@@ -167,15 +167,13 @@ export const createRoom = createServerFn({ method: 'POST' })
         .returning()
       if (!room) continue
       const token = crypto.randomUUID()
-      await db
-        .insert(players)
-        .values({
-          roomId: room.id,
-          name: data.name,
-          gender: data.gender,
-          role: 'host',
-          token,
-        })
+      await db.insert(players).values({
+        roomId: room.id,
+        name: data.name,
+        gender: data.gender,
+        role: 'host',
+        token,
+      })
       return { code, token, questionIds }
     }
     throw new Error('صار مشكل، عاود جرّب')
@@ -210,15 +208,13 @@ export const joinRoom = createServerFn({ method: 'POST' })
         )
       }
       const token = crypto.randomUUID()
-      await tx
-        .insert(players)
-        .values({
-          roomId: room.id,
-          name: data.name,
-          gender: data.gender,
-          role: 'guest',
-          token,
-        })
+      await tx.insert(players).values({
+        roomId: room.id,
+        name: data.name,
+        gender: data.gender,
+        role: 'guest',
+        token,
+      })
       // A date starts as soon as the guest is in; friends wait for the host to press start
       if (mode === 'date') {
         await tx
@@ -259,6 +255,31 @@ export const startRoom = createServerFn({ method: 'POST' })
             : room.questionIds,
       })
       .where(and(eq(rooms.id, room.id), eq(rooms.phase, 'waiting')))
+    return { ok: true }
+  })
+
+/** The host of a friends room removes a player while the room is still waiting. */
+export const kickPlayer = createServerFn({ method: 'POST' })
+  .validator(authSchema.extend({ playerId: z.number().int() }))
+  .handler(async ({ data }) => {
+    const { room, player } = await authorize(data.code, data.token)
+    if (room.mode !== 'friends')
+      throw new Error('ما تنجّمش تنحّي لاعب في اللعبة هذي')
+    if (player.role !== 'host')
+      throw new Error('اللي حلّ اللعبة برك ينجّم ينحّي لاعب')
+    if (room.phase !== 'waiting')
+      throw new Error('ما تنجّمش تنحّي لاعب بعد ما بدات اللعبة')
+    if (data.playerId === player.id) throw new Error('ما تنجّمش تنحّي روحك')
+    // The host can't be removed; deleting the row cascades to the player's voice membership
+    await db
+      .delete(players)
+      .where(
+        and(
+          eq(players.id, data.playerId),
+          eq(players.roomId, room.id),
+          ne(players.role, 'host'),
+        ),
+      )
     return { ok: true }
   })
 

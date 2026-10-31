@@ -9,6 +9,7 @@ import {
   Send,
   Share2,
   ShieldAlert,
+  X,
 } from 'lucide-react'
 
 import { GenderPicker } from '@/components/gender-picker'
@@ -21,6 +22,7 @@ import {
   getRoomPreview,
   getRoomState,
   joinRoom,
+  kickPlayer,
   playJoker,
   reportScreenshot,
   spin,
@@ -247,6 +249,8 @@ function JoinGate({
 function useRoomState(code: string, token: string) {
   const [state, setState] = useState<RoomState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The host removed me from the room (friends lobby)
+  const [removed, setRemoved] = useState(false)
   const [alerts, setAlerts] = useState<number>(0)
   const [offset, setOffset] = useState(0)
   const since = useRef(0)
@@ -256,6 +260,10 @@ function useRoomState(code: string, token: string) {
 
   useEffect(() => {
     let stop = false
+    // Set once the room no longer knows this token (removed by the host, or room gone)
+    let gone = false
+    // True after at least one successful poll, so we only treat a later auth failure as removal
+    let hadState = false
     let timer: number | undefined
     const tick = async () => {
       window.clearTimeout(timer)
@@ -283,13 +291,20 @@ function useRoomState(code: string, token: string) {
         }
         first.current = false
         phase.current = s.phase
+        hadState = true
         setState(s)
         setError(null)
       } catch (err) {
-        if (!stop)
-          setError(
-            err instanceof Error ? err.message : 'مشكل في الإنترنت، عاود جرّب',
-          )
+        if (stop) return
+        const msg =
+          err instanceof Error ? err.message : 'مشكل في الإنترنت، عاود جرّب'
+        // The room rejects this token now: the host removed me (or the room is gone). Stop polling.
+        if (msg.includes('ما عندكش الحق') && hadState) {
+          gone = true
+          setRemoved(true)
+        } else {
+          setError(msg)
+        }
       } finally {
         // Each poll is a server call: stop once the date is over, slow down while
         // waiting for the other player, and pause while the tab is hidden
@@ -299,7 +314,7 @@ function useRoomState(code: string, token: string) {
             : phase.current === 'waiting'
               ? 4000
               : 1500
-        if (!stop && delay && !document.hidden)
+        if (!stop && !gone && delay && !document.hidden)
           timer = window.setTimeout(tick, delay)
       }
     }
@@ -317,7 +332,7 @@ function useRoomState(code: string, token: string) {
   }, [code, token])
 
   const refresh = useCallback(() => kick.current(), [])
-  return { state, error, alerts, offset, refresh }
+  return { state, error, removed, alerts, offset, refresh }
 }
 
 function useCountdown(endsAt: string | null | undefined, offset: number) {
@@ -340,7 +355,10 @@ const LETTERS = ['أ', 'ب', 'ج']
 
 function ChatRoom({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate()
-  const { state, error, alerts, offset, refresh } = useRoomState(code, token)
+  const { state, error, removed, alerts, offset, refresh } = useRoomState(
+    code,
+    token,
+  )
   const remaining = useCountdown(state?.phaseEndsAt, offset)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -412,6 +430,26 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
     }
   }
 
+  if (removed) {
+    return (
+      <div className="glow-bg grid min-h-dvh place-items-center px-5 text-center">
+        <div>
+          <p className="text-lg font-semibold">
+            اللي حلّ اللعبة نحّاك من القروب 👋
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            تنجّم تعمل لعبة جديدة ولا تدخل لوحدة أخرى.
+          </p>
+          <Button
+            className="btn-love mt-6 rounded-xl"
+            onClick={() => navigate({ to: '/' })}
+          >
+            رجوع للصفحة الرئيسية
+          </Button>
+        </div>
+      </div>
+    )
+  }
   if (error && !state) {
     return (
       <div className="glow-bg grid min-h-dvh place-items-center px-5 text-center">
@@ -1220,6 +1258,7 @@ function Lobby({
   onStarted: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [kicking, setKicking] = useState<number | null>(null)
   const isHost = state.me.role === 'host'
   const host = state.others.find((o) => o.host)
   const count = state.others.length + 1
@@ -1236,6 +1275,20 @@ function Lobby({
     }
   }
 
+  async function remove(playerId: number, name: string) {
+    if (kicking) return
+    setKicking(playerId)
+    try {
+      await kickPlayer({ data: { code, token, playerId } })
+      toast.success(`${name} تنحّى من القروب`)
+      onStarted()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'صار مشكل، عاود جرّب')
+    } finally {
+      setKicking(null)
+    }
+  }
+
   return (
     <div className="surface pop-in mx-auto max-w-sm rounded-3xl p-5 text-center">
       <p className="font-display font-semibold">
@@ -1245,20 +1298,36 @@ function Lobby({
         {[
           { id: state.me.id, name: state.me.name, online: true },
           ...state.others,
-        ].map((p) => (
-          <span
-            key={p.id}
-            className="flex items-center gap-1.5 rounded-full border border-border bg-background/50 px-3 py-1 text-sm"
-          >
+        ].map((p) => {
+          const canKick =
+            isHost && p.id !== state.me.id && !('host' in p && p.host)
+          return (
             <span
-              className={cn(
-                'size-2 rounded-full',
-                p.online ? 'bg-emerald-400' : 'bg-muted-foreground/40',
+              key={p.id}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-background/50 py-1 ps-3 pe-2 text-sm"
+            >
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  p.online ? 'bg-emerald-400' : 'bg-muted-foreground/40',
+                )}
+              />
+              {p.id === state.me.id ? `${p.name} (إنتي)` : p.name}
+              {canKick && (
+                <button
+                  type="button"
+                  onClick={() => remove(p.id, p.name)}
+                  disabled={kicking !== null}
+                  aria-label={`نحّي ${p.name}`}
+                  title={`نحّي ${p.name}`}
+                  className="grid size-5 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:opacity-50"
+                >
+                  <X className="size-3.5" />
+                </button>
               )}
-            />
-            {p.id === state.me.id ? `${p.name} (إنتي)` : p.name}
-          </span>
-        ))}
+            </span>
+          )
+        })}
       </div>
       {isHost ? (
         <>
