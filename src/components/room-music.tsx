@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 
 // Drop a royalty-free track here (looping). Starts soft on purpose.
 const SRC = '/romantic.mp3'
-const DEFAULT_VOLUME = 0.12
+const DEFAULT_VOLUME = 0.1
 const ON_KEY = 'firstdate:music:on'
 const VOL_KEY = 'firstdate:music:vol'
 
@@ -138,16 +138,28 @@ export function RoomMusic({ ducked }: { ducked: boolean }) {
       {!failed && (
         <Popover>
           <PopoverTrigger
-            className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
+            className={cn(
+              'relative grid size-9 shrink-0 place-items-center rounded-full transition-colors hover:bg-muted',
+              on && !ducked && 'bg-primary/10',
+            )}
             aria-label="الموسيقى"
             title="الموسيقى"
           >
             <Music
               className={cn(
                 'size-4 transition-colors',
-                on && !ducked ? 'text-primary' : 'text-muted-foreground',
+                on && !ducked
+                  ? 'animate-pulse text-primary'
+                  : 'text-muted-foreground',
               )}
             />
+            {/* A sign that this button is the music, and it's playing now */}
+            {on && !ducked && (
+              <span className="absolute -end-0.5 -top-0.5 flex size-2.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-70" />
+                <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
+              </span>
+            )}
           </PopoverTrigger>
           <PopoverContent align="end" className="w-56">
             <div className="flex items-center gap-2" dir="ltr">
