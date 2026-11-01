@@ -11,12 +11,17 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as MatchyRouteImport } from './routes/matchy'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SirRouteImport } from './routes/sir'
+import { Route as AdminCoinsRouteImport } from './routes/admin_.coins'
 import { Route as AdminFunnelRouteImport } from './routes/admin_.funnel'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
+import { Route as ApiFlouciWebhookRouteImport } from './routes/api.flouci-webhook'
+import { Route as MatchyPayRouteImport } from './routes/matchy_.pay'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
+import { Route as MatchyChatUsernameRouteImport } from './routes/matchy_.chat.$username'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,6 +33,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MatchyRoute = MatchyRouteImport.update({
+  id: '/matchy',
+  path: '/matchy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -36,6 +46,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const SirRoute = SirRouteImport.update({
   id: '/sir',
   path: '/sir',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminCoinsRoute = AdminCoinsRouteImport.update({
+  id: '/admin_/coins',
+  path: '/admin/coins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminFunnelRoute = AdminFunnelRouteImport.update({
@@ -53,85 +68,135 @@ const AdminPlayersRoute = AdminPlayersRouteImport.update({
   path: '/admin/players',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFlouciWebhookRoute = ApiFlouciWebhookRouteImport.update({
+  id: '/api/flouci-webhook',
+  path: '/api/flouci-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatchyPayRoute = MatchyPayRouteImport.update({
+  id: '/matchy_/pay',
+  path: '/matchy/pay',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
   id: '/room/$code',
   path: '/room/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatchyChatUsernameRoute = MatchyChatUsernameRouteImport.update({
+  id: '/matchy_/chat/$username',
+  path: '/matchy/chat/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/matchy': typeof MatchyRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin/coins': typeof AdminCoinsRoute
   '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
+  '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
+  '/matchy/pay': typeof MatchyPayRoute
   '/room/$code': typeof RoomCodeRoute
+  '/matchy/chat/$username': typeof MatchyChatUsernameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/matchy': typeof MatchyRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin/coins': typeof AdminCoinsRoute
   '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
+  '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
+  '/matchy/pay': typeof MatchyPayRoute
   '/room/$code': typeof RoomCodeRoute
+  '/matchy/chat/$username': typeof MatchyChatUsernameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/matchy': typeof MatchyRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/admin_/coins': typeof AdminCoinsRoute
   '/admin_/funnel': typeof AdminFunnelRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
+  '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
+  '/matchy_/pay': typeof MatchyPayRoute
   '/room/$code': typeof RoomCodeRoute
+  '/matchy_/chat/$username': typeof MatchyChatUsernameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
+    | '/matchy'
     | '/privacy'
     | '/sir'
+    | '/admin/coins'
     | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
+    | '/api/flouci-webhook'
+    | '/matchy/pay'
     | '/room/$code'
+    | '/matchy/chat/$username'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
+    | '/matchy'
     | '/privacy'
     | '/sir'
+    | '/admin/coins'
     | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
+    | '/api/flouci-webhook'
+    | '/matchy/pay'
     | '/room/$code'
+    | '/matchy/chat/$username'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/matchy'
     | '/privacy'
     | '/sir'
+    | '/admin_/coins'
     | '/admin_/funnel'
     | '/admin_/messages'
     | '/admin_/players'
+    | '/api/flouci-webhook'
+    | '/matchy_/pay'
     | '/room/$code'
+    | '/matchy_/chat/$username'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  MatchyRoute: typeof MatchyRoute
   PrivacyRoute: typeof PrivacyRoute
   SirRoute: typeof SirRoute
+  AdminCoinsRoute: typeof AdminCoinsRoute
   AdminFunnelRoute: typeof AdminFunnelRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
+  ApiFlouciWebhookRoute: typeof ApiFlouciWebhookRoute
+  MatchyPayRoute: typeof MatchyPayRoute
   RoomCodeRoute: typeof RoomCodeRoute
+  MatchyChatUsernameRoute: typeof MatchyChatUsernameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -150,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/matchy': {
+      id: '/matchy'
+      path: '/matchy'
+      fullPath: '/matchy'
+      preLoaderRoute: typeof MatchyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -162,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/sir'
       fullPath: '/sir'
       preLoaderRoute: typeof SirRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/coins': {
+      id: '/admin_/coins'
+      path: '/admin/coins'
+      fullPath: '/admin/coins'
+      preLoaderRoute: typeof AdminCoinsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin_/funnel': {
@@ -185,11 +264,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPlayersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/flouci-webhook': {
+      id: '/api/flouci-webhook'
+      path: '/api/flouci-webhook'
+      fullPath: '/api/flouci-webhook'
+      preLoaderRoute: typeof ApiFlouciWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/matchy_/pay': {
+      id: '/matchy_/pay'
+      path: '/matchy/pay'
+      fullPath: '/matchy/pay'
+      preLoaderRoute: typeof MatchyPayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/room/$code': {
       id: '/room/$code'
       path: '/room/$code'
       fullPath: '/room/$code'
       preLoaderRoute: typeof RoomCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/matchy_/chat/$username': {
+      id: '/matchy_/chat/$username'
+      path: '/matchy/chat/$username'
+      fullPath: '/matchy/chat/$username'
+      preLoaderRoute: typeof MatchyChatUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -198,12 +298,17 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  MatchyRoute: MatchyRoute,
   PrivacyRoute: PrivacyRoute,
   SirRoute: SirRoute,
+  AdminCoinsRoute: AdminCoinsRoute,
   AdminFunnelRoute: AdminFunnelRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
+  ApiFlouciWebhookRoute: ApiFlouciWebhookRoute,
+  MatchyPayRoute: MatchyPayRoute,
   RoomCodeRoute: RoomCodeRoute,
+  MatchyChatUsernameRoute: MatchyChatUsernameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

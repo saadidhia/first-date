@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   BarChart3,
+  Coins,
   Filter,
   LogOut,
   MessageCircleHeart,
@@ -54,6 +55,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               label="التحويل"
             />
             <Tab
+              to="/admin/coins"
+              icon={<Coins className="size-4" />}
+              label="الكوان"
+            />
+            <Tab
               to="/admin/messages"
               icon={<MessageCircleHeart className="size-4" />}
               label="الرسائل"
@@ -89,7 +95,12 @@ function Tab({
   icon,
   label,
 }: {
-  to: '/admin' | '/admin/players' | '/admin/funnel' | '/admin/messages'
+  to:
+    | '/admin'
+    | '/admin/players'
+    | '/admin/funnel'
+    | '/admin/coins'
+    | '/admin/messages'
   icon: React.ReactNode
   label: string
 }) {

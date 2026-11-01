@@ -43,6 +43,10 @@ export const players = pgTable(
     name: text().notNull(),
     role: text().notNull(), // 'host' | 'guest'
     gender: text(), // 'male' | 'female'; null for players who joined before it was asked
+    // Set in a Matchy (logged-in) game; null for anonymous room players
+    accountId: integer('account_id').references(() => accounts.id, {
+      onDelete: 'cascade',
+    }),
     token: text().notNull().unique(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
       .defaultNow()
@@ -184,3 +188,191 @@ export const secretMessages = pgTable(
 export const activityMinutes = pgTable('activity_minutes', {
   minute: timestamp({ withTimezone: true }).primaryKey(),
 })
+
+// ---------------------------------------------------------------------------
+// Matchy: logged-in players, a coin wallet, paid match games, friends and chat.
+// ---------------------------------------------------------------------------
+
+// A logged-in account. Signup asks for a name, birthday and password; the username is
+// generated for them. 1000 coins = 1000 millimes. A new account starts with 3000 coins.
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: serial().primaryKey(),
+    username: text().notNull().unique(),
+    name: text().notNull(),
+    birthday: text().notNull(), // 'YYYY-MM-DD'
+    gender: text(), // 'male' | 'female'; optional, personalizes the game
+    passwordHash: text('password_hash').notNull(),
+    passwordSalt: text('password_salt').notNull(),
+    coins: integer().notNull().default(3000),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index('accounts_last_seen_idx').on(t.lastSeenAt)],
+)
+
+// An invitation to a match game. The starter creates the room and invites a free player;
+// the other accepts to join and the game begins.
+export const matchInvites = pgTable(
+  'match_invites',
+  {
+    id: serial().primaryKey(),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    fromId: integer('from_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    toId: integer('to_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    status: text().notNull().default('pending'), // pending | accepted | declined | cancelled
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('match_invites_to_idx').on(t.toId, t.status),
+    index('match_invites_from_idx').on(t.fromId, t.status),
+  ],
+)
+
+// The result of a finished match game and the coins charged to the starter. One row per
+// room (unique) so the charge happens exactly once.
+export const matches = pgTable('matches', {
+  id: serial().primaryKey(),
+  roomId: integer('room_id')
+    .notNull()
+    .unique()
+    .references(() => rooms.id, { onDelete: 'cascade' }),
+  starterId: integer('starter_id')
+    .notNull()
+    .references(() => accounts.id, { onDelete: 'cascade' }),
+  otherId: integer('other_id')
+    .notNull()
+    .references(() => accounts.id, { onDelete: 'cascade' }),
+  scorePct: integer('score_pct').notNull(),
+  matched: boolean().notNull(),
+  coinsCharged: integer('coins_charged').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+})
+
+// Two rows per friendship (a->b and b->a) so each side lists its friends with one query.
+// Created when two accounts match (>= 50%).
+export const friendships = pgTable(
+  'friendships',
+  {
+    id: serial().primaryKey(),
+    accountId: integer('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    friendId: integer('friend_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex('friendship_pair_idx').on(t.accountId, t.friendId)],
+)
+
+// Direct messages between two matched accounts (friends). A conversation is the messages
+// where {from,to} is that pair, either direction.
+export const chatMessages = pgTable(
+  'chat_messages',
+  {
+    id: serial().primaryKey(),
+    fromId: integer('from_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    toId: integer('to_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    body: text().notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('chat_messages_from_to_idx').on(t.fromId, t.toId, t.id),
+    index('chat_messages_to_idx').on(t.toId, t.id),
+  ],
+)
+
+// Prepaid coin codes the admin generates and sells; a player redeems one to top up.
+export const coinVouchers = pgTable(
+  'coin_vouchers',
+  {
+    id: serial().primaryKey(),
+    code: text().notNull().unique(),
+    coins: integer().notNull(),
+    // Who redeemed it and when; null while it's still unused
+    redeemedBy: integer('redeemed_by').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
+    // Optional batch note (e.g. "instagram sept")
+    note: text(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index('coin_vouchers_redeemed_idx').on(t.redeemedBy)],
+)
+
+// A coin purchase through a payment provider (Flouci). One row per attempt; coins are
+// credited once when the provider confirms the payment (status -> 'paid').
+export const payments = pgTable(
+  'payments',
+  {
+    id: serial().primaryKey(),
+    accountId: integer('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    provider: text().notNull().default('flouci'),
+    // Our own id, placed in the return link so the callback knows which payment
+    trackingId: text('tracking_id').notNull().unique(),
+    // The provider's payment id (Flouci payment_id), set after it's created
+    providerRef: text('provider_ref'),
+    packId: text('pack_id').notNull(),
+    coins: integer().notNull(),
+    amountMillimes: integer('amount_millimes').notNull(),
+    status: text().notNull().default('pending'), // pending | paid | failed
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index('payments_account_idx').on(t.accountId, t.id),
+    index('payments_provider_ref_idx').on(t.providerRef),
+  ],
+)
+
+// Coin ledger: one row per balance change (negative = charge, positive = credit).
+export const walletTx = pgTable(
+  'wallet_tx',
+  {
+    id: serial().primaryKey(),
+    accountId: integer('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    amount: integer().notNull(),
+    reason: text().notNull(), // 'signup_bonus' | 'match'
+    roomId: integer('room_id').references(() => rooms.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index('wallet_tx_account_idx').on(t.accountId, t.id)],
+)

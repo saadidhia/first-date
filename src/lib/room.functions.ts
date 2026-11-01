@@ -193,6 +193,9 @@ export const joinRoom = createServerFn({ method: 'POST' })
         .for('update')
         .limit(1)
       if (!room) throw new Error('الكود هذا غالط، ما فمّا حتى لعبة بيه')
+      // A Matchy game is joined only by accepting an invite, never by code
+      if (room.mode === 'match')
+        throw new Error('اللعبة هذي بالدعوة برك')
       const mode = asMode(room.mode)
       if (mode === 'friends' && room.phase !== 'waiting')
         throw new Error('اللعبة بدات، ما عادش تنجم تدخل')
@@ -555,6 +558,8 @@ export const getRoomState = createServerFn({ method: 'POST' })
     return {
       code: room.code,
       mode,
+      // A Matchy (logged-in, paid) game: the client hides voice/music and shows the coins result
+      isMatch: room.mode === 'match',
       phase: room.phase as
         | 'waiting'
         | 'intro'

@@ -141,6 +141,12 @@ function Home() {
             >
               كيفاش نلعبو؟
             </a>
+            <Link
+              to="/matchy"
+              className="rounded-full px-4 py-2 font-medium text-gold transition hover:text-white"
+            >
+              ماتشي 💘
+            </Link>
             <a
               href="#start"
               className="rounded-full border border-white/20 bg-black/30 px-4 py-2 font-medium text-white backdrop-blur transition hover:bg-black/50"

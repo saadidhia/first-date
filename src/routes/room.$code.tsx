@@ -41,6 +41,7 @@ import {
   saveName,
   saveToken,
 } from '@/lib/session'
+import { getMatchResult } from '@/lib/match.functions'
 import { rewardedAdsEnabled, showRewardedAd } from '@/lib/rewarded-ad'
 import { useScreenshotGuard } from '@/lib/use-screenshot-guard'
 import { useVoice } from '@/lib/use-voice'
@@ -361,8 +362,10 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
     code,
     token,
   )
+  const isMatch = state?.isMatch ?? false
   const remaining = useCountdown(state?.phaseEndsAt, offset)
-  const voice = useVoice(code, token)
+  // A Matchy game has no voice call, so don't open one
+  const voice = useVoice(code, token, !!state && !isMatch)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
@@ -567,7 +570,9 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 )}
               </div>
             </div>
-            {!friends && <RoomMusic ducked={voice.talking.length > 0} />}
+            {!friends && !isMatch && (
+              <RoomMusic ducked={voice.talking.length > 0} />
+            )}
             {sameCount > 0 && (
               <span
                 className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-semibold text-emerald-300 tabular-nums"
@@ -618,7 +623,9 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
               />
             ))}
           </div>
-          <VoiceBar voice={voice} me={state.me} others={others} />
+          {!isMatch && (
+            <VoiceBar voice={voice} me={state.me} others={others} />
+          )}
         </header>
 
         {/* Messages */}
@@ -661,9 +668,20 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             )}
           </BotBubble>
 
-          {state.phase === 'waiting' && (
-            <InviteCard code={state.code} friends={friends} />
-          )}
+          {state.phase === 'waiting' &&
+            (isMatch ? (
+              <div className="surface mx-auto max-w-sm rounded-2xl p-5 text-center">
+                <div className="text-3xl">💌</div>
+                <p className="mt-2 font-semibold">
+                  نستنّاو اللاعب الآخر يقبل الدعوة…
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  كي يقبل، اللعبة تبدا وحدها
+                </p>
+              </div>
+            ) : (
+              <InviteCard code={state.code} friends={friends} />
+            ))}
           {others.map((o) => (
             <SystemPill key={o.id}>
               🎉 {o.name} {g(o.gender, 'دخل', 'دخلت')} للّعبة
@@ -867,7 +885,12 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             </div>
           )}
 
-          {state.phase === 'done' && <ResultCard code={code} token={token} />}
+          {state.phase === 'done' &&
+            (isMatch ? (
+              <MatchResultCard code={code} token={token} />
+            ) : (
+              <ResultCard code={code} token={token} />
+            ))}
         </div>
 
         {/* Composer */}
@@ -1867,6 +1890,100 @@ function InviteCard({ code, friends }: { code: string; friends: boolean }) {
           ))}
         </span>
         {friends ? 'نستنّاو صحابك يدخلو…' : 'نستنّاو فيه يدخل…'}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------ Match result ------------------------------ */
+
+type MatchResult = Awaited<ReturnType<typeof getMatchResult>>
+
+function MatchResultCard({ code, token }: { code: string; token: string }) {
+  const [result, setResult] = useState<MatchResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getMatchResult({ data: { code, token } })
+      .then(setResult)
+      .catch((e) => setError(e instanceof Error ? e.message : 'مشكل'))
+  }, [code, token])
+
+  if (error) return <SystemPill>{error}</SystemPill>
+  if (!result) {
+    return (
+      <BotBubble>
+        كمّلنا! نحسبو النتيجة… <TypingInline />
+      </BotBubble>
+    )
+  }
+
+  const { score, matched, coinsCharged, iAmStarter, myCoins, partner } = result
+  const tone = matched ? 'bg-love' : 'bg-muted'
+  return (
+    <div className="space-y-3 pt-4">
+      <div className="surface pop-in mx-auto max-w-md overflow-hidden rounded-3xl">
+        <div className={cn('px-6 pb-6 pt-7 text-center text-white', tone)}>
+          <p className="text-sm opacity-90">
+            التفاهم مع {partner.name}
+            {partner.age != null && ` · ${partner.age} سنة`}
+          </p>
+          <div className="mt-2 font-display text-6xl font-bold tabular-nums">
+            {score}%
+          </div>
+          <p className="mt-2 text-sm font-semibold">
+            {matched ? '🎉 مبروك، عملتو ماتش!' : '💔 ما عملتوش ماتش'}
+          </p>
+        </div>
+        <div className="space-y-3 p-5">
+          {matched ? (
+            <p className="text-center text-sm text-muted-foreground">
+              ولّيتو أصحاب، تنجّمو تحكيو مع بعضكم توّا.
+            </p>
+          ) : (
+            <p className="text-center text-sm text-muted-foreground">
+              التفاهم أقلّ من 50%. جرّب مع شخص آخر 🤞
+            </p>
+          )}
+
+          {/* Coins: only the starter is charged */}
+          <div className="rounded-2xl bg-muted/50 p-3 text-center text-sm">
+            {iAmStarter ? (
+              <>
+                <div>
+                  تنحّاو منّك{' '}
+                  <span className="font-bold text-primary">
+                    {coinsCharged}
+                  </span>{' '}
+                  كوان
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  رصيدك توّا: {myCoins} كوان
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                اللعبة هذي كانت على حساب اللي عزمك 💛
+              </div>
+            )}
+          </div>
+
+          {matched && partner.username && (
+            <Link
+              to="/matchy/chat/$username"
+              params={{ username: partner.username }}
+              className="btn-love flex w-full items-center justify-center gap-2 rounded-xl py-3 font-semibold text-white"
+            >
+              <Send className="size-4" /> افتح الدردشة مع {partner.name}
+            </Link>
+          )}
+          <Link
+            to="/matchy"
+            className="flex w-full items-center justify-center rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-muted"
+          >
+            رجوع للّوبي
+          </Link>
+        </div>
       </div>
     </div>
   )

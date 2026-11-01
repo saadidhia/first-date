@@ -47,7 +47,7 @@ function micError(e: unknown) {
   return inApp ? OPEN_IN_BROWSER : 'ما نجّمناش نحلّو الميكرو'
 }
 
-export function useVoice(code: string, token: string) {
+export function useVoice(code: string, token: string, enabled = true) {
   const [open, setOpen] = useState(true)
   const [closesAt, setClosesAt] = useState<number | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -232,6 +232,7 @@ export function useVoice(code: string, token: string) {
   // The sync loop: fast while in the call, slow otherwise (to show who is in it), and it stops
   // once the voice chat has closed for good
   useEffect(() => {
+    if (!enabled) return // a Matchy game has no voice call
     let stop = false
     let busy = false
     let again = false
@@ -329,7 +330,7 @@ export function useVoice(code: string, token: string) {
       document.removeEventListener('visibilitychange', onVisible)
       hangUp()
     }
-  }, [code, token, onSignal, call, closePeer, hangUp, send])
+  }, [enabled, code, token, onSignal, call, closePeer, hangUp, send])
 
   // Who is talking: measured on the audio itself for me and the players I'm connected to,
   // and taken from the server for the others
@@ -387,8 +388,9 @@ export function useVoice(code: string, token: string) {
 
   // Everyone hears the others as soon as they open the room
   useEffect(() => {
+    if (!enabled) return // a Matchy game has no voice call
     connect()
-  }, [connect])
+  }, [enabled, connect])
 
   // Asks for the mic (from a tap) and sends it to everyone I'm connected to
   const turnMicOn = useCallback(async () => {
