@@ -110,11 +110,12 @@ export const signup = createServerFn({ method: 'POST' })
           coins: SIGNUP_BONUS,
         })
         .returning()
-      await tx.insert(walletTx).values({
-        accountId: acc.id,
-        amount: SIGNUP_BONUS,
-        reason: 'signup_bonus',
-      })
+      if (SIGNUP_BONUS > 0)
+        await tx.insert(walletTx).values({
+          accountId: acc.id,
+          amount: SIGNUP_BONUS,
+          reason: 'signup_bonus',
+        })
       return acc
     })
     startSession(account.id)

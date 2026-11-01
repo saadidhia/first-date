@@ -3,6 +3,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   Check,
+  Clapperboard,
   Coins,
   LogOut,
   MessageCircle,
@@ -24,11 +25,13 @@ import {
 } from '@/lib/match.functions'
 import { getFriends } from '@/lib/chat.functions'
 import {
+  claimAdReward,
   coinShopEnabled,
   redeemVoucher,
   startCoinPurchase,
 } from '@/lib/coins.functions'
 import { COIN_PACKS } from '@/lib/coin-packs'
+import { rewardedAdsEnabled, showRewardedAd } from '@/lib/rewarded-ad'
 import { saveToken } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
@@ -365,7 +368,8 @@ function Lobby({
         </div>
       </div>
 
-      {/* Buy coins (Flouci) + redeem a voucher code */}
+      {/* Earn coins by watching an ad, buy them, or redeem a code */}
+      <WatchAd onCoins={onCoins} />
       <BuyCoins />
       <RedeemBox onCoins={onCoins} />
 
@@ -558,6 +562,41 @@ function Lobby({
         )}
       </section>
     </div>
+  )
+}
+
+function WatchAd({ onCoins }: { onCoins: (coins: number) => void }) {
+  const [busy, setBusy] = useState(false)
+  if (!rewardedAdsEnabled) return null
+
+  async function watch() {
+    setBusy(true)
+    try {
+      const outcome = await showRewardedAd('coins')
+      if (outcome !== 'rewarded') {
+        toast('ما كمّلتش الإعلان، ما فمّا كوان 🙃')
+        return
+      }
+      const r = await claimAdReward()
+      onCoins(r.coins)
+      toast.success(`ربحت ${r.added} كوان! 🎉`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'صار مشكل')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={watch}
+      disabled={busy}
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-400/20 disabled:opacity-60"
+    >
+      <Clapperboard className="size-4" />
+      {busy ? 'الإعلان يحمّل…' : 'شوف إعلان و اربح 50 كوان'}
+    </button>
   )
 }
 

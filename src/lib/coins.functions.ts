@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getRequestHeader } from '@tanstack/react-start/server'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
@@ -193,6 +193,63 @@ export const confirmCoinPurchase = createServerFn({ method: 'POST' })
       pack: { coins: p.coins, millimes: p.amountMillimes },
     }
   })
+
+// ---------------------------------------------------------------------------
+// Earning coins by watching a rewarded ad.
+// ---------------------------------------------------------------------------
+
+const AD_REWARD = 50
+const AD_WINDOW_MS = 24 * 60 * 60 * 1000
+const AD_DAILY_CAP = 30 // at most 30 ads (1500 coins) per rolling 24h
+const AD_COOLDOWN_MS = 15_000 // minimum gap between rewards
+
+/**
+ * Credits coins for a watched rewarded ad. The browser reports completion (which can be
+ * faked), so the real protection is server-side: a rolling-24h cap and a cooldown bound
+ * how much anyone can mint without actually watching.
+ */
+export const claimAdReward = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    const me = requireAccountId()
+    const since = new Date(Date.now() - AD_WINDOW_MS)
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(walletTx)
+      .where(
+        and(
+          eq(walletTx.accountId, me),
+          eq(walletTx.reason, 'ad'),
+          gt(walletTx.createdAt, since),
+        ),
+      )
+    if (count >= AD_DAILY_CAP)
+      throw new Error('وصلت للحد متاع اليوم، عاود غدوة 🙏')
+
+    const [last] = await db
+      .select({ createdAt: walletTx.createdAt })
+      .from(walletTx)
+      .where(and(eq(walletTx.accountId, me), eq(walletTx.reason, 'ad')))
+      .orderBy(desc(walletTx.id))
+      .limit(1)
+    if (last && Date.now() - last.createdAt.getTime() < AD_COOLDOWN_MS)
+      throw new Error('استنّى شويّة قبل الإعلان الجاي ⏳')
+
+    const [acc] = await db
+      .update(accounts)
+      .set({ coins: sql`${accounts.coins} + ${AD_REWARD}` })
+      .where(eq(accounts.id, me))
+      .returning({ coins: accounts.coins })
+    await db
+      .insert(walletTx)
+      .values({ accountId: me, amount: AD_REWARD, reason: 'ad' })
+
+    return {
+      added: AD_REWARD,
+      coins: acc.coins,
+      remaining: Math.max(0, AD_DAILY_CAP - count - 1),
+    }
+  },
+)
 
 /** Admin: the latest vouchers, with who redeemed each (if anyone). */
 export const adminListVouchers = createServerFn({ method: 'GET' }).handler(
