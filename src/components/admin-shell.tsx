@@ -4,6 +4,7 @@ import {
   BarChart3,
   Coins,
   Filter,
+  Heart,
   LogOut,
   MessageCircleHeart,
   Users,
@@ -55,6 +56,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               label="التحويل"
             />
             <Tab
+              to="/admin/matchy"
+              icon={<Heart className="size-4" />}
+              label="ماتشي"
+            />
+            <Tab
               to="/admin/coins"
               icon={<Coins className="size-4" />}
               label="الكوان"
@@ -99,6 +105,7 @@ function Tab({
     | '/admin'
     | '/admin/players'
     | '/admin/funnel'
+    | '/admin/matchy'
     | '/admin/coins'
     | '/admin/messages'
   icon: React.ReactNode

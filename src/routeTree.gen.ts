@@ -16,6 +16,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SirRouteImport } from './routes/sir'
 import { Route as AdminCoinsRouteImport } from './routes/admin_.coins'
 import { Route as AdminFunnelRouteImport } from './routes/admin_.funnel'
+import { Route as AdminMatchyRouteImport } from './routes/admin_.matchy'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
 import { Route as ApiFlouciWebhookRouteImport } from './routes/api.flouci-webhook'
@@ -58,6 +59,11 @@ const AdminFunnelRoute = AdminFunnelRouteImport.update({
   path: '/admin/funnel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminMatchyRoute = AdminMatchyRouteImport.update({
+  id: '/admin_/matchy',
+  path: '/admin/matchy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminMessagesRoute = AdminMessagesRouteImport.update({
   id: '/admin_/messages',
   path: '/admin/messages',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/sir': typeof SirRoute
   '/admin/coins': typeof AdminCoinsRoute
   '/admin/funnel': typeof AdminFunnelRoute
+  '/admin/matchy': typeof AdminMatchyRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/sir': typeof SirRoute
   '/admin/coins': typeof AdminCoinsRoute
   '/admin/funnel': typeof AdminFunnelRoute
+  '/admin/matchy': typeof AdminMatchyRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/sir': typeof SirRoute
   '/admin_/coins': typeof AdminCoinsRoute
   '/admin_/funnel': typeof AdminFunnelRoute
+  '/admin_/matchy': typeof AdminMatchyRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
   '/api/flouci-webhook': typeof ApiFlouciWebhookRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/sir'
     | '/admin/coins'
     | '/admin/funnel'
+    | '/admin/matchy'
     | '/admin/messages'
     | '/admin/players'
     | '/api/flouci-webhook'
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/sir'
     | '/admin/coins'
     | '/admin/funnel'
+    | '/admin/matchy'
     | '/admin/messages'
     | '/admin/players'
     | '/api/flouci-webhook'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/sir'
     | '/admin_/coins'
     | '/admin_/funnel'
+    | '/admin_/matchy'
     | '/admin_/messages'
     | '/admin_/players'
     | '/api/flouci-webhook'
@@ -191,6 +203,7 @@ export interface RootRouteChildren {
   SirRoute: typeof SirRoute
   AdminCoinsRoute: typeof AdminCoinsRoute
   AdminFunnelRoute: typeof AdminFunnelRoute
+  AdminMatchyRoute: typeof AdminMatchyRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
   ApiFlouciWebhookRoute: typeof ApiFlouciWebhookRoute
@@ -250,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFunnelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/matchy': {
+      id: '/admin_/matchy'
+      path: '/admin/matchy'
+      fullPath: '/admin/matchy'
+      preLoaderRoute: typeof AdminMatchyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin_/messages': {
       id: '/admin_/messages'
       path: '/admin/messages'
@@ -303,6 +323,7 @@ const rootRouteChildren: RootRouteChildren = {
   SirRoute: SirRoute,
   AdminCoinsRoute: AdminCoinsRoute,
   AdminFunnelRoute: AdminFunnelRoute,
+  AdminMatchyRoute: AdminMatchyRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
   ApiFlouciWebhookRoute: ApiFlouciWebhookRoute,

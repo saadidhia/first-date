@@ -4,11 +4,16 @@ import { z } from 'zod'
 
 import { db } from '../../db'
 import {
+  accounts,
   activityMinutes,
   answers,
+  friendships,
+  matches,
+  payments,
   players,
   rooms,
   voiceMembers,
+  walletTx,
 } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 import { type AnswerLite, computeCompat } from './compat'
@@ -467,5 +472,110 @@ export const getAdminVoice = createServerFn({ method: 'GET' }).handler(
       })
       .from(voiceMembers)
       .where(gt(voiceMembers.seenAt, new Date(Date.now() - VOICE_MS)))
+  },
+)
+
+// How recent an account's last_seen must be to count as online, on the Matchy admin page
+const MATCHY_ONLINE_MS = 40_000
+
+/** Everything about the Matchy feature: summary stats and every account. */
+export const getAdminMatchy = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    if (!getAdminEmail())
+      throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+
+    const accs = await db
+      .select({
+        id: accounts.id,
+        username: accounts.username,
+        name: accounts.name,
+        birthday: accounts.birthday,
+        gender: accounts.gender,
+        coins: accounts.coins,
+        lastSeenAt: accounts.lastSeenAt,
+        createdAt: accounts.createdAt,
+      })
+      .from(accounts)
+      .orderBy(desc(accounts.lastSeenAt))
+
+    // Friends per account (friendships has two rows per pair)
+    const fr = await db
+      .select({
+        accountId: friendships.accountId,
+        c: sql<number>`count(*)::int`,
+      })
+      .from(friendships)
+      .groupBy(friendships.accountId)
+    const friendsOf = new Map(fr.map((r) => [r.accountId, r.c]))
+
+    // Matches each account took part in (as starter or other)
+    const ms = await db
+      .select({
+        starterId: matches.starterId,
+        otherId: matches.otherId,
+        matched: matches.matched,
+        coinsCharged: matches.coinsCharged,
+      })
+      .from(matches)
+    const playedOf = new Map<number, number>()
+    const bump = (id: number) => playedOf.set(id, (playedOf.get(id) ?? 0) + 1)
+    for (const m of ms) {
+      bump(m.starterId)
+      bump(m.otherId)
+    }
+
+    const now = Date.now()
+    const age = (b: string) => {
+      const d = new Date(b)
+      if (Number.isNaN(d.getTime())) return null
+      return Math.max(
+        0,
+        Math.floor((now - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
+      )
+    }
+
+    const users = accs.map((a) => ({
+      username: a.username,
+      name: a.name,
+      age: age(a.birthday),
+      gender: a.gender as 'male' | 'female' | null,
+      coins: a.coins,
+      online: now - a.lastSeenAt.getTime() < MATCHY_ONLINE_MS,
+      lastSeenAt: a.lastSeenAt.toISOString(),
+      friends: friendsOf.get(a.id) ?? 0,
+      matches: playedOf.get(a.id) ?? 0,
+      joinedAt: a.createdAt.toISOString(),
+    }))
+
+    // Coins bought / earned, and real money in via Flouci
+    const paidRows = await db
+      .select({
+        coins: sql<number>`coalesce(sum(${payments.coins}),0)::int`,
+        millimes: sql<number>`coalesce(sum(${payments.amountMillimes}),0)::int`,
+      })
+      .from(payments)
+      .where(eq(payments.status, 'paid'))
+    const [adRow] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(walletTx)
+      .where(eq(walletTx.reason, 'ad'))
+    const [{ pairs }] = await db
+      .select({ pairs: sql<number>`(count(*)/2)::int` })
+      .from(friendships)
+
+    const stats = {
+      users: users.length,
+      online: users.filter((u) => u.online).length,
+      matches: ms.length,
+      matched: ms.filter((m) => m.matched).length,
+      friendPairs: pairs,
+      coinsInWallets: users.reduce((s, u) => s + u.coins, 0),
+      coinsBought: paidRows[0]?.coins ?? 0,
+      revenueTnd: Math.round((paidRows[0]?.millimes ?? 0) / 10) / 100,
+      coinsSpentOnMatches: ms.reduce((s, m) => s + m.coinsCharged, 0),
+      adRewards: adRow?.c ?? 0,
+    }
+
+    return { stats, users }
   },
 )
