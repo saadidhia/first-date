@@ -15,7 +15,7 @@ import {
 
 const SIGNUP_BONUS = 3000
 
-// Latin-friendly, love/Tunisia-themed stems for the generated username.
+// Fallback stems when a name can't be turned into letters (e.g. emoji-only).
 const STEMS = [
   'habib',
   'yasmin',
@@ -69,11 +69,34 @@ const fails = new Map<string, { count: number; resetAt: number }>()
 const MAX_FAILS = 10
 const LOCK_MS = 15 * 60 * 1000
 
-async function makeUsername(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const stem = STEMS[Math.floor(Math.random() * STEMS.length)]
-    const num = 100 + Math.floor(Math.random() * 9900)
-    const username = `${stem}_${num}`
+// Rough Arabic -> Latin map so a username can be built from an Arabic name (Tunisian style).
+const AR2LAT: Record<string, string> = {
+  ا: 'a', أ: 'a', إ: 'i', آ: 'a', ب: 'b', ت: 't', ث: 'th', ج: 'j', ح: 'h',
+  خ: 'kh', د: 'd', ذ: 'd', ر: 'r', ز: 'z', س: 's', ش: 'ch', ص: 's', ض: 'd',
+  ط: 't', ظ: 'd', ع: 'a', غ: 'gh', ف: 'f', ق: 'q', ك: 'k', ل: 'l', م: 'm',
+  ن: 'n', ه: 'h', و: 'w', ي: 'y', ى: 'a', ة: 'a', ئ: 'y', ؤ: 'w', ء: '',
+}
+
+/** Turns a name (Arabic or Latin) into a short lowercase latin slug for the username. */
+function slugifyName(name: string): string {
+  let out = ''
+  for (const ch of name.trim().toLowerCase()) {
+    if (/[a-z0-9]/.test(ch)) out += ch
+    else if (ch in AR2LAT) out += AR2LAT[ch]
+    // spaces, punctuation and diacritics are dropped
+  }
+  return out.slice(0, 12)
+}
+
+/** A unique username built from the player's name (or part of it) plus some digits. */
+async function makeUsername(name: string): Promise<string> {
+  let base = slugifyName(name)
+  if (base.length < 2) base = STEMS[Math.floor(Math.random() * STEMS.length)]
+  for (let attempt = 0; attempt < 40; attempt++) {
+    // Widen the number range a little as attempts grow, to keep finding free names
+    const span = 900 + attempt * 300
+    const num = 100 + Math.floor(Math.random() * span)
+    const username = `${base}_${num}`.slice(0, 24)
     const [exists] = await db
       .select({ id: accounts.id })
       .from(accounts)
@@ -81,8 +104,8 @@ async function makeUsername(): Promise<string> {
       .limit(1)
     if (!exists) return username
   }
-  // Fallback: timestamp-based, practically unique
-  return `user_${Date.now().toString(36)}`
+  // Fallback: practically unique
+  return `${base}_${Date.now().toString(36)}`.slice(0, 24)
 }
 
 export const signup = createServerFn({ method: 'POST' })
@@ -96,7 +119,7 @@ export const signup = createServerFn({ method: 'POST' })
   )
   .handler(async ({ data }) => {
     const { hash, salt } = hashPassword(data.password)
-    const username = await makeUsername()
+    const username = await makeUsername(data.name)
     const account = await db.transaction(async (tx) => {
       const [acc] = await tx
         .insert(accounts)
