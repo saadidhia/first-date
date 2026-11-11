@@ -12,9 +12,11 @@ import {
   X,
 } from 'lucide-react'
 
+import { Confetti } from '@/components/confetti'
 import { GenderPicker } from '@/components/gender-picker'
 import { Logo } from '@/components/logo'
 import { RoomMusic } from '@/components/room-music'
+import { SfxButton } from '@/components/sfx-toggle'
 import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,6 +27,7 @@ import {
   joinRoom,
   kickPlayer,
   playJoker,
+  react,
   reportScreenshot,
   spin,
   startRoom,
@@ -41,14 +44,21 @@ import {
   saveName,
   saveToken,
 } from '@/lib/session'
+import { REACTIONS } from '@/lib/reactions'
 import { rewardedAdsEnabled, showRewardedAd } from '@/lib/rewarded-ad'
+import { type ShareCardInput, shareCard } from '@/lib/share-card'
+import { playSfx } from '@/lib/sfx'
 import { useScreenshotGuard } from '@/lib/use-screenshot-guard'
 import { useVoice } from '@/lib/use-voice'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/room/$code')({
   head: () => ({
-    meta: [{ title: 'اللعبة · First Date على الطريقة التونسية' }],
+    meta: [
+      { title: 'اللعبة · First Date على الطريقة التونسية' },
+      // A private game screen: keep it out of search (and AdSense review)
+      { name: 'robots', content: 'noindex, nofollow' },
+    ],
   }),
   component: RoomPage,
 })
@@ -355,6 +365,62 @@ const g = (gender: string | null | undefined, male: string, female: string) =>
 
 const LETTERS = ['أ', 'ب', 'ج']
 
+/** A regular question whose answers everyone can see (not marriage, votes or the wheel). */
+const isOpenQuestion = (h: RoomState['history'][number]) =>
+  h.kind === 'question' && !h.marriage && h.options.length > 0
+
+/** Same answer on this question: with the partner, or (in a group) with everyone. */
+const isMatch = (h: RoomState['history'][number], othersCount: number) =>
+  othersCount > 1 ? h.sameWith.length === othersCount : h.same
+
+/**
+ * How many open questions in a row ended with the same answer, counting back from the last
+ * revealed one. Votes, spins and marriage questions are skipped, they don't break a streak.
+ */
+function matchStreak(history: RoomState['history'], othersCount: number) {
+  let streak = 0
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i]
+    if (!isOpenQuestion(h)) continue
+    if (!isMatch(h, othersCount)) break
+    streak++
+  }
+  return streak
+}
+
+/** The question after which the halfway teaser shows (the 15th of 30). */
+const halfwayIndex = (total: number) => Math.floor(total / 2) - 1
+
+/**
+ * How close I am so far, on the open questions both sides answered: with the partner, or on
+ * average with the group (plus the friend I'm closest to). Null before anything to compare.
+ */
+function halfwayStats(
+  history: RoomState['history'],
+  upTo: number,
+  others: { id: number; name: string }[],
+) {
+  const items = history.filter((h) => h.index <= upTo && isOpenQuestion(h))
+  const per = others.map((o) => {
+    let together = 0
+    let same = 0
+    for (const h of items) {
+      const theirs = h.theirs.find((t) => t.id === o.id)?.option
+      if (h.myOption == null || theirs == null) continue
+      together++
+      if (theirs === h.myOption) same++
+    }
+    return { ...o, together, pct: together ? (same / together) * 100 : 0 }
+  })
+  const counted = per.filter((p) => p.together > 0)
+  if (!counted.length) return null
+  const pct = Math.round(
+    counted.reduce((sum, p) => sum + p.pct, 0) / counted.length,
+  )
+  const closest = [...counted].sort((a, b) => b.pct - a.pct)[0]
+  return { pct, closest: others.length > 1 ? closest.name : null }
+}
+
 function ChatRoom({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate()
   const { state, error, removed, alerts, offset, refresh } = useRoomState(
@@ -389,6 +455,115 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
     state?.current?.myAnswer,
     state?.current?.answeredIds.length,
   ])
+
+  // Celebrations and sounds, from what changed since the previous poll
+  const [confetti, setConfetti] = useState(0)
+  const [banner, setBanner] = useState<{ id: number; text: string } | null>(
+    null,
+  )
+  const [floats, setFloats] = useState<
+    { id: number; emoji: string; left: number }[]
+  >([])
+  const seen = useRef<{
+    len: number
+    question: number | null
+    spinAt: number | null
+    reactions: Set<string>
+    phase: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!state) return
+    const othersCount = state.others.length
+    const reactionKeys = new Set(
+      state.history.flatMap((h) =>
+        h.reactions
+          .filter((r) => r.playerId !== state.me.id)
+          .map((r) => `${h.index}|${r.playerId}|${r.emoji}`),
+      ),
+    )
+    const question = state.current?.index ?? null
+    const spinAt = state.wheel?.spinning ? state.wheel.index : null
+    const prev = seen.current
+    seen.current = {
+      len: state.history.length,
+      question,
+      spinAt,
+      reactions: reactionKeys,
+      phase: state.phase,
+    }
+    // First load (or a reopened page): nothing new to celebrate
+    if (!prev) return
+    const now = Date.now()
+
+    if (state.history.length > prev.len) {
+      const fresh = state.history.slice(prev.len)
+      const last = fresh[fresh.length - 1]
+      const matched = isOpenQuestion(last) && isMatch(last, othersCount)
+      const streak = matchStreak(state.history, othersCount)
+      if (matched && streak >= 3) {
+        const times = `${streak} ${streak <= 10 ? 'مرات' : 'مرّة'}`
+        playSfx('streak')
+        navigator.vibrate?.([40, 60, 40])
+        setConfetti(now)
+        setBanner({
+          id: now,
+          text:
+            othersCount > 1
+              ? `🔥 القروب الكل متّفق ${times} ورا بعضهم!`
+              : `🔥 ${times} ورا بعضهم نفس الجواب!`,
+        })
+        window.setTimeout(
+          () => setBanner((b) => (b?.id === now ? null : b)),
+          2800,
+        )
+      } else {
+        playSfx(matched ? 'match' : 'reveal')
+      }
+      if (fresh.some((h) => h.index === halfwayIndex(state.total)))
+        window.setTimeout(() => playSfx('halfway'), 700)
+    }
+    if (question != null && question !== prev.question) playSfx('question')
+    if (spinAt != null && spinAt !== prev.spinAt) playSfx('spin')
+    if (state.phase === 'done' && prev.phase !== 'done') {
+      playSfx('done')
+      setConfetti(now + 1)
+    }
+
+    // Someone else reacted: their emoji floats up over the chat
+    const added = [...reactionKeys].filter((k) => !prev.reactions.has(k))
+    if (added.length) {
+      playSfx('reaction')
+      const items = added.slice(0, 5).map((k, i) => ({
+        id: now + i,
+        emoji: k.split('|')[2],
+        left: 25 + Math.random() * 50,
+      }))
+      setFloats((f) => [...f, ...items])
+      window.setTimeout(
+        () =>
+          setFloats((f) => f.filter((x) => !items.some((y) => y.id === x.id))),
+        2300,
+      )
+    }
+  }, [state])
+
+  // The last 5 seconds tick while I still have to answer, then a buzz when time is up
+  const answerable =
+    state?.phase === 'question' &&
+    !!state.current &&
+    !state.current.myAnswer &&
+    state.current.myTurn
+  const tickAt = useRef('')
+  const currentIndex = state?.current?.index
+  useEffect(() => {
+    if (!answerable || currentIndex == null) return
+    const key = `${currentIndex}:${remaining}`
+    if (tickAt.current === key) return
+    tickAt.current = key
+    if (remaining > 0 && remaining <= 5) playSfx('tick')
+    else if (remaining === 0) playSfx('timeup')
+  }, [answerable, remaining, currentIndex])
 
   async function send(
     optionIndex: number | null,
@@ -491,6 +666,14 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
         ? 0
         : state.index + (state.phase === 'reveal' ? 1 : 0)
   const sameCount = state.history.filter((h) => h.same).length
+  const streak = matchStreak(state.history, others.length)
+  const lastOpen =
+    [...state.history].reverse().find(isOpenQuestion)?.index ?? -1
+  const midIndex = halfwayIndex(state.total)
+  const playerNames = new Map([
+    [state.me.id, 'إنتي'],
+    ...others.map((o) => [o.id, o.name] as const),
+  ])
   // The finale, the votes and the wheel are shown in gold
   const special = (i: number) => state.kinds[i] !== 'question'
   const currentFinale = !!state.current && special(state.current.index)
@@ -567,7 +750,20 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                 )}
               </div>
             </div>
-            {!friends && <RoomMusic ducked={voice.talking.length > 0} />}
+            {friends ? (
+              <SfxButton />
+            ) : (
+              <RoomMusic ducked={voice.talking.length > 0} />
+            )}
+            {streak >= 2 && (
+              <span
+                key={streak}
+                className="pop-in rounded-full bg-gold/15 px-2 py-1 text-xs font-semibold text-gold tabular-nums"
+                title="قدّاش من مرّة ورا بعضهم نفس الجواب"
+              >
+                🔥 {streak}
+              </span>
+            )}
             {sameCount > 0 && (
               <span
                 className="rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-semibold text-emerald-300 tabular-nums"
@@ -764,6 +960,25 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
                   )}
                 </>
               )}
+              {isOpenQuestion(h) && state.phase !== 'done' && (
+                <ReactionBar
+                  item={h}
+                  meId={state.me.id}
+                  names={playerNames}
+                  full={h.index === lastOpen}
+                  code={code}
+                  token={token}
+                  onChanged={refresh}
+                />
+              )}
+              {h.index === midIndex && state.total > 6 && (
+                <HalfwayCard
+                  stats={halfwayStats(state.history, midIndex, others)}
+                  group={others.length > 1}
+                  friends={friends}
+                  left={state.kinds.slice(midIndex + 1)}
+                />
+              )}
             </div>
           ))}
 
@@ -867,7 +1082,9 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             </div>
           )}
 
-          {state.phase === 'done' && <ResultCard code={code} token={token} />}
+          {state.phase === 'done' && (
+            <ResultCard code={code} token={token} myName={state.me.name} />
+          )}
         </div>
 
         {/* Composer */}
@@ -990,6 +1207,27 @@ function ChatRoom({ code, token }: { code: string; token: string }) {
             </button>
           </form>
         </div>
+
+        {confetti > 0 && <Confetti key={confetti} burst={confetti} />}
+        {banner && (
+          <div
+            key={banner.id}
+            className="banner-pop pointer-events-none absolute top-28 z-40 w-max max-w-[90%] rounded-full bg-gold px-5 py-2.5 text-center font-display text-base font-bold text-[oklch(0.25_0.04_260)] shadow-xl shadow-gold/30"
+            style={{ left: '50%' }}
+          >
+            {banner.text}
+          </div>
+        )}
+        {floats.map((f) => (
+          <span
+            key={f.id}
+            className="emoji-float pointer-events-none absolute bottom-32 z-40 text-4xl"
+            style={{ left: `${f.left}%` }}
+            aria-hidden
+          >
+            {f.emoji}
+          </span>
+        ))}
 
         {hidden && (
           <div className="absolute inset-0 z-50 grid place-items-center bg-background/80 backdrop-blur-2xl">
@@ -1699,6 +1937,193 @@ function revealVerdict(
     : `⚖️ القروب تقسم: ${counts.join(' ضد ')}`
 }
 
+/**
+ * Emoji reactions under a revealed question. The newest question shows every emoji to pick
+ * from; older ones only show the emoji someone already used. One per player: tapping another
+ * replaces it, tapping mine again takes it off.
+ */
+function ReactionBar({
+  item,
+  meId,
+  names,
+  full,
+  code,
+  token,
+  onChanged,
+}: {
+  item: HistoryItem
+  meId: number
+  names: Map<number, string>
+  full: boolean
+  code: string
+  token: string
+  onChanged: () => void
+}) {
+  const serverMine = item.reactions.find((r) => r.playerId === meId)?.emoji ?? null
+  // My tap, shown right away until the server answers with something new
+  const [pending, setPending] = useState<{
+    emoji: string | null
+    base: string | null
+  } | null>(null)
+  const mine =
+    pending && pending.base === serverMine ? pending.emoji : serverMine
+  const list = [
+    ...item.reactions.filter((r) => r.playerId !== meId),
+    ...(mine ? [{ playerId: meId, emoji: mine }] : []),
+  ]
+  const shown = full
+    ? REACTIONS
+    : REACTIONS.filter((e) => list.some((r) => r.emoji === e))
+  if (!shown.length) return null
+
+  async function tap(emoji: (typeof REACTIONS)[number]) {
+    const next = mine === emoji ? null : emoji
+    setPending({ emoji: next, base: serverMine })
+    if (next) playSfx('reaction')
+    try {
+      await react({ data: { code, token, index: item.index, emoji: next } })
+      onChanged()
+    } catch (err) {
+      setPending(null)
+      toast.error(err instanceof Error ? err.message : 'صار مشكل، عاود جرّب')
+    }
+  }
+
+  return (
+    <div className="flex justify-center gap-1.5 pt-0.5">
+      {shown.map((e) => {
+        const who = list.filter((r) => r.emoji === e)
+        return (
+          <button
+            key={e}
+            type="button"
+            onClick={() => tap(e)}
+            title={who.map((r) => names.get(r.playerId) ?? '').join('، ')}
+            aria-label={`تفاعل ${e}`}
+            aria-pressed={mine === e}
+            className={cn(
+              'pop-in flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition active:scale-90',
+              mine === e
+                ? 'border-primary/60 bg-primary/15'
+                : 'border-border bg-card/60 hover:bg-muted',
+              !full && 'py-0.5 text-xs',
+            )}
+          >
+            <span>{e}</span>
+            {who.length > 0 && (
+              <span className="text-xs font-semibold tabular-nums">
+                {who.length}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Shown once, halfway through: how close we are so far, and what's still to come. */
+function HalfwayCard({
+  stats,
+  group,
+  friends,
+  left,
+}: {
+  stats: ReturnType<typeof halfwayStats>
+  group: boolean
+  friends: boolean
+  left: RoomState['kinds']
+}) {
+  const coming = [
+    left.includes('finale') && (friends ? 'صراحة كاملة 🔥' : 'أسئلة على الزواج 💍'),
+    left.includes('vote') && 'تصويت 🗳️',
+    left.includes('spin') && 'العجلة 🎡',
+  ].filter(Boolean)
+  return (
+    <div className="pop-in pt-3">
+      <div className="surface mx-auto max-w-sm rounded-3xl border border-gold/40 p-4 text-center">
+        <p className="eyebrow">🏁 وصلنا للنص</p>
+        {stats && (
+          <>
+            <div
+              className={cn(
+                'mt-1 font-display text-4xl font-bold tabular-nums',
+                friends ? 'text-sidi-blue' : 'text-love',
+              )}
+            >
+              {stats.pct}%
+            </div>
+            <p className="mt-1 text-sm">
+              {group
+                ? `حتى لتوّا تتفق مع القروب في ${stats.pct}% من الأجوبة`
+                : `حتى لتوّا تتفقو في ${stats.pct}% من الأجوبة`}
+            </p>
+            <div className="mx-auto mt-2 h-1.5 max-w-52 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  'bar-grow h-full rounded-full',
+                  friends ? 'bubble-friends' : 'bg-love',
+                )}
+                style={{ width: `${stats.pct}%` }}
+              />
+            </div>
+            {stats.closest && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                الأقرب ليك لتوّا: <strong>{stats.closest}</strong> 👀
+              </p>
+            )}
+          </>
+        )}
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          مازال {left.length} سؤال
+          {coming.length ? `، فيهم ${coming.join(' و')}` : ''}. كمّلو للآخر باش
+          تشوفو التقرير السرّي 🤫
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Makes a story image of the result (score only, no answers) and opens the share sheet. */
+function ShareResultButton({
+  input,
+  friends,
+}: {
+  input: ShareCardInput
+  friends: boolean
+}) {
+  const [busy, setBusy] = useState(false)
+  async function go() {
+    setBusy(true)
+    try {
+      const r = await shareCard(input)
+      if (r === 'downloaded') toast.success('الصورة تسجّلت 📸 حطّها في الستوري')
+    } catch {
+      toast.error('ما نجّمناش نعملو الصورة، عاود جرّب')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div>
+      <Button
+        onClick={go}
+        disabled={busy}
+        className={cn(
+          'h-12 w-full rounded-xl text-base font-semibold text-white',
+          friends ? 'bubble-friends' : 'btn-love',
+        )}
+      >
+        <Share2 className="size-4" />
+        {busy ? 'لحظة…' : 'شارك النتيجة في الستوري 📸'}
+      </Button>
+      <p className="mt-1.5 text-center text-xs text-muted-foreground">
+        الصورة فيها النسبة برك، حتى جواب ما يبان 🤫
+      </p>
+    </div>
+  )
+}
+
 function MyBubble({
   children,
   friends,
@@ -1874,7 +2299,15 @@ function InviteCard({ code, friends }: { code: string; friends: boolean }) {
 
 /* --------------------------------- Result --------------------------------- */
 
-function ResultCard({ code, token }: { code: string; token: string }) {
+function ResultCard({
+  code,
+  token,
+  myName,
+}: {
+  code: string
+  token: string
+  myName: string
+}) {
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -1896,7 +2329,7 @@ function ResultCard({ code, token }: { code: string; token: string }) {
   if (result.kind === 'group')
     return (
       <ReportGate code={code}>
-        <GroupResult result={result} />
+        <GroupResult result={result} myName={myName} />
       </ReportGate>
     )
 
@@ -1966,6 +2399,19 @@ function ResultCard({ code, token }: { code: string; token: string }) {
           </div>
 
           <div className="space-y-6 p-5">
+            <ShareResultButton
+              friends={friends}
+              input={{
+                mode: friends ? 'friends' : 'date',
+                label: friends ? 'صحبتنا صحيحة بـ' : 'التفاهم بيناتنا',
+                names: `${myName} ${friends ? '🤝' : '💘'} ${name}`,
+                score: result.score,
+                line: `${result.verdictEmoji} ${result.verdict}`,
+                cta: friends
+                  ? 'وإنتوما قدّاش تعرفو بعضكم؟ 👀'
+                  : 'وإنتوما قدّاش تتفاهمو؟ 👀',
+              }}
+            />
             {/* Portrait */}
             {result.traits.length > 0 && (
               <section>
@@ -2210,8 +2656,18 @@ function ReportGate({
 type GroupResultData = Extract<Result, { kind: 'group' }>
 
 /** The report for a friends room of 3 or more: who is close to who, and who answered like who. */
-function GroupResult({ result }: { result: GroupResultData }) {
+function GroupResult({
+  result,
+  myName,
+}: {
+  result: GroupResultData
+  myName: string
+}) {
   const twin = result.friends[0]
+  // members[0] is me; titles are matched by name
+  const myTitle = result.titles.find(
+    (t) => t.name === (result.members[0]?.name ?? myName),
+  )?.title
   const closest = result.pairs.slice(0, 3)
   const farthest =
     result.pairs.length > 3 ? result.pairs[result.pairs.length - 1] : null
@@ -2234,6 +2690,20 @@ function GroupResult({ result }: { result: GroupResultData }) {
         </div>
 
         <div className="space-y-6 p-5">
+          {twin && (
+            <ShareResultButton
+              friends
+              input={{
+                mode: 'friends',
+                label: `توأم ${myName} في القروب`,
+                names: twin.name,
+                score: twin.score,
+                line: `🤝 نفس الجواب ${twin.same} مرّة من ${twin.together}`,
+                extra: myTitle ? `لقبي: ${myTitle}` : undefined,
+                cta: 'جرّبو مع صحابكم 🤝',
+              }}
+            />
+          )}
           <section>
             <SectionTitle>💙 إنتي وصحابك</SectionTitle>
             <ul className="mt-3 space-y-3">

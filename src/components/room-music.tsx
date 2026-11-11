@@ -6,6 +6,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { SfxButton, SfxToggleRow } from '@/components/sfx-toggle'
 import { cn } from '@/lib/utils'
 
 // Drop a royalty-free track here (looping). Starts soft on purpose.
@@ -135,7 +136,10 @@ export function RoomMusic({ ducked }: { ducked: boolean }) {
         onCanPlay={() => setReady(true)}
         onError={() => setFailed(true)}
       />
-      {!failed && (
+      {/* No music file: still offer the game sounds switch */}
+      {failed ? (
+        <SfxButton />
+      ) : (
         <Popover>
           <PopoverTrigger
             className={cn(
@@ -194,6 +198,7 @@ export function RoomMusic({ ducked }: { ducked: boolean }) {
             <p className="mt-2 text-center text-[11px] text-muted-foreground">
               🎵 موسيقى رومانسية
             </p>
+            <SfxToggleRow />
           </PopoverContent>
         </Popover>
       )}

@@ -49,3 +49,15 @@ export function addSeenQuestions(ids: string[]) {
   const merged = [...new Set([...ids, ...getSeenQuestions()])].slice(0, SEEN_MAX)
   window.localStorage.setItem(SEEN_KEY, JSON.stringify(merged))
 }
+
+// Solo games with the AI: the token of each game, by its id
+const aiKey = (id: number) => `firstdate:ai:${id}`
+
+export function getAiToken(id: number): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(aiKey(id))
+}
+
+export function saveAiToken(id: number, token: string) {
+  window.localStorage.setItem(aiKey(id), token)
+}

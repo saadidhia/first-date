@@ -4,13 +4,14 @@ import { and, asc, eq, gt, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../db'
-import { answers, events, players, rooms } from '../../db/schema'
+import { answers, events, players, reactions, rooms } from '../../db/schema'
 import { trafficSource } from './traffic'
 import { recordActivity } from './activity'
 import { authorize } from './room-auth'
 import { computeCompat } from './compat'
 import { computeGroupReport, computeRounds } from './group'
 import { computeMarriageReport } from './marriage'
+import { REACTIONS } from './reactions'
 import {
   INTRO_SECONDS,
   PRIVATE_SECONDS,
@@ -58,6 +59,16 @@ const modeSchema = z.enum(['date', 'friends'])
 const authSchema = z.object({ code: codeSchema, token: z.string().uuid() })
 
 type Room = typeof rooms.$inferSelect
+
+// The last question whose answers are shown to everyone (-1 before the first reveal)
+const revealedUpToOf = (room: Room) =>
+  room.phase === 'done'
+    ? room.questionIds.length - 1
+    : room.phase === 'reveal'
+      ? room.currentIndex
+      : room.phase === 'waiting'
+        ? -1
+        : room.currentIndex - 1
 
 const guardOf = (room: Room) =>
   and(
@@ -111,6 +122,11 @@ async function spinWheel(room: Room) {
     .where(guardOf(room))
 }
 
+/** Deletes a room's emoji reactions; they are only needed while the game runs. */
+async function clearReactions(roomId: number) {
+  await db.delete(reactions).where(eq(reactions.roomId, roomId))
+}
+
 /** Moves the room forward when a timer has expired. Conditional updates keep it race-safe. */
 async function advance(room: Room) {
   if (!room.phaseEndsAt || room.phaseEndsAt.getTime() > Date.now()) return
@@ -133,10 +149,13 @@ async function advance(room: Room) {
   } else if (room.phase === 'reveal') {
     const next = room.currentIndex + 1
     if (next >= room.questionIds.length) {
-      await db
+      const ended = await db
         .update(rooms)
         .set({ phase: 'done', phaseEndsAt: null, endedAt: new Date() })
         .where(guard)
+        .returning({ id: rooms.id })
+      // Reactions only live during the game: they go once it ends
+      if (ended.length) await clearReactions(room.id)
     } else {
       await db.update(rooms).set(open(room, next)).where(guard)
     }
@@ -397,12 +416,19 @@ export const getRoomState = createServerFn({ method: 'POST' })
     }
 
     // Only questions that are already revealed expose the other answers
-    const revealedUpTo =
-      room.phase === 'done'
-        ? room.questionIds.length - 1
-        : room.phase === 'reveal'
-          ? room.currentIndex
-          : room.currentIndex - 1
+    const revealedUpTo = revealedUpToOf(room)
+    const allReactions = await db
+      .select({
+        playerId: reactions.playerId,
+        index: reactions.questionIndex,
+        emoji: reactions.emoji,
+      })
+      .from(reactions)
+      .where(eq(reactions.roomId, room.id))
+    const reactionsAt = (i: number) =>
+      allReactions
+        .filter((r) => r.index === i)
+        .map((r) => ({ playerId: r.playerId, emoji: r.emoji }))
     const history: {
       index: number
       kind: 'question' | 'vote' | 'spin'
@@ -429,6 +455,8 @@ export const getRoomState = createServerFn({ method: 'POST' })
       answered: boolean
       // The chosen player swapped this question with the joker
       joker: boolean
+      // Emoji reactions on this question (regular questions only)
+      reactions: { playerId: number; emoji: string }[]
     }[] = []
     for (let i = 0; i <= revealedUpTo && room.phase !== 'waiting'; i++) {
       const id = room.questionIds[i]
@@ -456,6 +484,7 @@ export const getRoomState = createServerFn({ method: 'POST' })
           chosen,
           answered: !!chosen && !!answerOf(chosen.id, i),
           joker: room.joker?.index === i,
+          reactions: [],
         })
         continue
       }
@@ -494,6 +523,7 @@ export const getRoomState = createServerFn({ method: 'POST' })
         chosen: null,
         answered: false,
         joker: false,
+        reactions: q.marriage ? [] : reactionsAt(i),
       })
     }
 
@@ -668,6 +698,57 @@ export const submitAnswer = createServerFn({ method: 'POST' })
     return { ok: true }
   })
 
+/**
+ * Puts an emoji on a revealed regular question (or takes it off with `emoji: null`). One per
+ * player and question: a new one replaces the old. Only while the game runs: they are deleted
+ * when it ends. Marriage questions, votes and spins keep their
+ * answers hidden, so they can't be reacted to.
+ */
+export const react = createServerFn({ method: 'POST' })
+  .validator(
+    authSchema.extend({
+      index: z.number().int().min(0),
+      emoji: z.enum(REACTIONS).nullable(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { room, player } = await authorize(data.code, data.token)
+    const id = room.questionIds[data.index]
+    if (
+      id == null ||
+      room.phase === 'done' ||
+      data.index > revealedUpToOf(room) ||
+      roundFor(id) ||
+      questionFor(id, null)?.marriage
+    ) {
+      throw new Error('ما تنجّمش تتفاعل مع السؤال هذا')
+    }
+    if (data.emoji == null) {
+      await db
+        .delete(reactions)
+        .where(
+          and(
+            eq(reactions.playerId, player.id),
+            eq(reactions.questionIndex, data.index),
+          ),
+        )
+      return { ok: true }
+    }
+    await db
+      .insert(reactions)
+      .values({
+        roomId: room.id,
+        playerId: player.id,
+        questionIndex: data.index,
+        emoji: data.emoji,
+      })
+      .onConflictDoUpdate({
+        target: [reactions.playerId, reactions.questionIndex],
+        set: { emoji: data.emoji, createdAt: new Date() },
+      })
+    return { ok: true }
+  })
+
 export const reportScreenshot = createServerFn({ method: 'POST' })
   .validator(authSchema)
   .handler(async ({ data }) => {
@@ -683,6 +764,8 @@ export const getMyResult = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { room, player: me } = await authorize(data.code, data.token)
     if (room.phase !== 'done') throw new Error('مازال ما كمّلتوش الأسئلة')
+    // Again here, in case a reaction landed in the same instant the game ended
+    await clearReactions(room.id)
     const roster = await db
       .select()
       .from(players)

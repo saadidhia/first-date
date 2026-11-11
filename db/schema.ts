@@ -104,6 +104,32 @@ export const events = pgTable(
   (t) => [index('events_room_idx').on(t.roomId)],
 )
 
+// Emoji reactions on a revealed question: one per player and question (tapping another replaces it)
+export const reactions = pgTable(
+  'reactions',
+  {
+    id: serial().primaryKey(),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    playerId: integer('player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    questionIndex: integer('question_index').notNull(),
+    emoji: text().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex('reactions_player_question_idx').on(
+      t.playerId,
+      t.questionIndex,
+    ),
+    index('reactions_room_idx').on(t.roomId),
+  ],
+)
+
 // Who is in the room's voice chat. A row counts while seen_at is recent; `speaking` lets the
 // players who didn't join see who is talking
 export const voiceMembers = pgTable(
@@ -184,3 +210,27 @@ export const secretMessages = pgTable(
 export const activityMinutes = pgTable('activity_minutes', {
   minute: timestamp({ withTimezone: true }).primaryKey(),
 })
+
+// A solo game with the AI (personality test). Anonymous: authorised by its random token.
+// `answers` maps question index → the original option index (0–2). The report is computed
+// from the answers on request (src/lib/ai.ts), nothing generated is stored.
+export const aiSessions = pgTable(
+  'ai_sessions',
+  {
+    id: serial().primaryKey(),
+    token: text().notNull().unique(),
+    name: text().notNull(),
+    gender: text(),
+    questionIds: jsonb('question_ids').$type<string[]>().notNull(),
+    answers: jsonb().$type<Record<string, number>>().notNull().default({}),
+    // The open question at the end, answered in the player's own words (optional)
+    openId: text('open_id'),
+    openAnswer: text('open_answer'),
+    source: text(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index('ai_sessions_created_idx').on(t.createdAt)],
+)

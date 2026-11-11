@@ -16,6 +16,8 @@ export const Route = createFileRoute('/sir')({
       { property: 'og:title', content: 'ابعثلي رسالة سرّية 🤫' },
       { property: 'og:description', content: 'اكتبلي اللي في قلبك، الرسالة توصلني أنا برك.' },
       { property: 'og:image', content: '/wedding-hero.webp' },
+      // Just a form: no ads here and nothing to index
+      { name: 'robots', content: 'noindex' },
     ],
   }),
   component: SecretPage,

@@ -3,6 +3,7 @@ import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { NotFoundPage } from '@/components/error-pages'
+import { ADSENSE_CLIENT } from '@/components/adsense'
 
 import '../styles.css'
 
@@ -74,12 +75,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="ar" dir="rtl">
       <head>
         <HeadContent />
-        {/* Google AdSense: loads the ad library site-wide so Google can verify and serve ads */}
-        <script
-          async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8012328178199762"
-          crossOrigin="anonymous"
-        />
+        {/* AdSense site ownership. The ad library itself only loads on content pages (<AdSenseScript />) */}
+        <meta name="google-adsense-account" content={ADSENSE_CLIENT} />
       </head>
       <body>
         <TooltipProvider>{children}</TooltipProvider>

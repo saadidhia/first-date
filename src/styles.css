@@ -277,12 +277,53 @@ code {
   animation: heart-float 4s ease-in infinite;
 }
 
+/* Streak celebration confetti (src/components/confetti.tsx) */
+@keyframes confetti-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--drift, 0px), 105vh) rotate(720deg); opacity: 0.6; }
+}
+.confetti-piece {
+  animation: confetti-fall 2s cubic-bezier(0.25, 0.6, 0.4, 1) both;
+}
+
+/* Someone else's reaction floats up over the chat */
+@keyframes emoji-float {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { transform: translateY(-20px) scale(1.25); opacity: 1; }
+  100% { transform: translateY(-260px) scale(1); opacity: 0; }
+}
+.emoji-float {
+  animation: emoji-float 2.2s ease-out both;
+}
+
+/* The streak banner pops in, stays a moment, then fades */
+@keyframes banner-pop {
+  0% { transform: translate(-50%, 12px) scale(0.85); opacity: 0; }
+  12% { transform: translate(-50%, 0) scale(1.05); opacity: 1; }
+  20% { transform: translate(-50%, 0) scale(1); }
+  85% { opacity: 1; }
+  100% { transform: translate(-50%, -8px); opacity: 0; }
+}
+.banner-pop {
+  animation: banner-pop 2.8s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pop-in,
   .bar-grow,
   .heart-float,
   .typing-dot {
     animation: none;
+  }
+  .confetti-piece {
+    display: none;
+  }
+  .emoji-float {
+    animation: none;
+  }
+  .banner-pop {
+    animation: none;
+    transform: translateX(-50%);
   }
 }
 
