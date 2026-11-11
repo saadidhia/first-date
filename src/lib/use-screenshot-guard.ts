@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 
+// While the player shares their own result image, the share sheet takes the focus: that's not
+// someone leaving the page, so the blur stays off until it closes.
+let paused = 0
+
+/** Keeps the blur off while `task` runs (e.g. the share sheet is open). */
+export async function withGuardPaused<T>(task: () => Promise<T>): Promise<T> {
+  paused++
+  try {
+    return await task()
+  } finally {
+    paused--
+  }
+}
+
 /**
  * Best-effort screenshot deterrent. Browsers cannot block OS screenshots, so this
  * catches the common shortcuts (PrintScreen, Win+Shift+S, Cmd+Shift+3/4/5, print),
@@ -35,9 +49,12 @@ export function useScreenshotGuard(enabled: boolean, onAttempt: () => void) {
       }
       if ((e.ctrlKey || e.metaKey) && k === 's') e.preventDefault()
     }
-    const onBlur = () => setHidden(true)
+    const onBlur = () => {
+      if (!paused) setHidden(true)
+    }
     const onFocus = () => setHidden(false)
-    const onVisibility = () => setHidden(document.visibilityState !== 'visible')
+    const onVisibility = () =>
+      setHidden(!paused && document.visibilityState !== 'visible')
     const block = (e: Event) => e.preventDefault()
 
     window.addEventListener('keydown', onKey)

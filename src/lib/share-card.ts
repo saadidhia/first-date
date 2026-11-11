@@ -1,7 +1,6 @@
 /**
  * Builds a 1080×1920 story image of a game result (the score and a short line, never anyone's
- * answers) and hands it to the phone's share sheet, or downloads it where sharing files isn't
- * supported. Browser only.
+ * answers). The room shows it in a preview, then shares it (phones) or downloads it. Browser only.
  */
 
 export type ShareCardInput = {
@@ -101,8 +100,22 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  drawText(ctx, '🇹🇳 First Date على الطريقة التونسية', 200, `600 46px ${BODY}`, GOLD, 60)
-  drawText(ctx, input.label, 360, `600 50px ${BODY}`, 'rgba(255,255,255,0.75)', 64)
+  drawText(
+    ctx,
+    '🇹🇳 First Date على الطريقة التونسية',
+    200,
+    `600 46px ${BODY}`,
+    GOLD,
+    60,
+  )
+  drawText(
+    ctx,
+    input.label,
+    360,
+    `600 50px ${BODY}`,
+    'rgba(255,255,255,0.75)',
+    64,
+  )
   drawText(ctx, input.names, 450, `700 78px ${HEAD}`, '#ffffff', 96)
 
   // Score ring
@@ -121,7 +134,13 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.strokeStyle = ring
   const pct = Math.max(0, Math.min(100, input.score)) / 100
   ctx.beginPath()
-  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(pct, 0.01))
+  ctx.arc(
+    cx,
+    cy,
+    r,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * Math.max(pct, 0.01),
+  )
   ctx.stroke()
   ctx.direction = 'ltr'
   ctx.font = `700 210px ${HEAD}`
@@ -130,7 +149,8 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.direction = 'rtl'
 
   const y = drawText(ctx, input.line, 1250, `700 64px ${HEAD}`, '#ffffff', 84)
-  if (input.extra) drawText(ctx, input.extra, y + 30, `600 50px ${BODY}`, GOLD, 66)
+  if (input.extra)
+    drawText(ctx, input.extra, y + 30, `600 50px ${BODY}`, GOLD, 66)
 
   // Bottom call to action
   const boxY = 1560
@@ -150,30 +170,38 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   )
 }
 
-/** Opens the share sheet with the image, or downloads it. */
-export async function shareCard(
-  input: ShareCardInput,
-): Promise<'shared' | 'downloaded' | 'cancelled'> {
-  const blob = await makeShareCard(input)
-  const file = new File([blob], 'first-date-tunisie.png', { type: 'image/png' })
-  const text = `${input.cta} ${window.location.origin}`
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], text })
-      return 'shared'
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError')
-        return 'cancelled'
-      // Share failed for another reason: fall back to a download
-    }
+const FILE_NAME = 'first-date-tunisie.png'
+
+/**
+ * Whether to offer the phone's share sheet. Only on touch devices: on a laptop the sheet
+ * has no Instagram story, so we offer a download instead.
+ */
+export function canShareImage(blob: Blob) {
+  if (typeof window === 'undefined') return false
+  if (!window.matchMedia?.('(pointer: coarse)').matches) return false
+  const file = new File([blob], FILE_NAME, { type: 'image/png' })
+  return !!navigator.canShare?.({ files: [file] })
+}
+
+/** Opens the share sheet with the image. Resolves false if the player closed it. */
+export async function shareImage(blob: Blob, text: string) {
+  const file = new File([blob], FILE_NAME, { type: 'image/png' })
+  try {
+    await navigator.share({ files: [file], text })
+    return true
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return false
+    throw err
   }
+}
+
+export function downloadImage(blob: Blob) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = file.name
+  a.download = FILE_NAME
   document.body.appendChild(a)
   a.click()
   a.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
-  return 'downloaded'
 }
