@@ -16,7 +16,9 @@ export function SfxToggleRow() {
       <span
         className={cn(
           'rounded-full px-2 py-0.5 font-semibold',
-          on ? 'bg-primary/20 text-primary' : 'bg-background text-muted-foreground',
+          on
+            ? 'bg-primary/20 text-primary'
+            : 'bg-background text-muted-foreground',
         )}
       >
         {on ? 'مشعولين' : 'مسكّرين'}
@@ -38,7 +40,10 @@ export function SfxButton() {
       title={on ? 'سكّر أصوات اللعبة' : 'حلّ أصوات اللعبة'}
     >
       <Icon
-        className={cn('size-4', on ? 'text-sidi-blue' : 'text-muted-foreground')}
+        className={cn(
+          'size-4',
+          on ? 'text-sidi-blue' : 'text-muted-foreground',
+        )}
       />
     </button>
   )
