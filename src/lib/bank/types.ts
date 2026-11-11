@@ -16,3 +16,11 @@
 // pointing at those ids. Add new questions at the end, never reorder or delete.
 export type RawOption = [text: string, weights: string]
 export type RawQuestion = [text: string, a: RawOption, b: RawOption, c: RawOption]
+
+// Solo "play with the AI" mode (see ../ai.ts). A question is [text, option, option, option];
+// an option is [text, code] where the code says how balanced that answer is on the
+// question's dimension: '2' balanced, 'a1'/'a0' leaning to the dimension's first pole
+// (0 = strongly), 'b1'/'b0' leaning to its second pole. Text uses {@masc|fem} for the
+// player. Ids are `ai_<dimension>_<position>`: append-only like the other banks.
+export type AiRawOption = [text: string, code: '2' | 'a1' | 'a0' | 'b1' | 'b0']
+export type AiRawQuestion = [text: string, a: AiRawOption, b: AiRawOption, c: AiRawOption]

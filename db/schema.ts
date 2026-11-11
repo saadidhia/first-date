@@ -210,3 +210,27 @@ export const secretMessages = pgTable(
 export const activityMinutes = pgTable('activity_minutes', {
   minute: timestamp({ withTimezone: true }).primaryKey(),
 })
+
+// A solo game with the AI (personality test). Anonymous: authorised by its random token.
+// `answers` maps question index → the original option index (0–2). The report is computed
+// from the answers on request (src/lib/ai.ts), nothing generated is stored.
+export const aiSessions = pgTable(
+  'ai_sessions',
+  {
+    id: serial().primaryKey(),
+    token: text().notNull().unique(),
+    name: text().notNull(),
+    gender: text(),
+    questionIds: jsonb('question_ids').$type<string[]>().notNull(),
+    answers: jsonb().$type<Record<string, number>>().notNull().default({}),
+    // The open question at the end, answered in the player's own words (optional)
+    openId: text('open_id'),
+    openAnswer: text('open_answer'),
+    source: text(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index('ai_sessions_created_idx').on(t.createdAt)],
+)
