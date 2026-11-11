@@ -104,6 +104,32 @@ export const events = pgTable(
   (t) => [index('events_room_idx').on(t.roomId)],
 )
 
+// Emoji reactions on a revealed question: one per player and question (tapping another replaces it)
+export const reactions = pgTable(
+  'reactions',
+  {
+    id: serial().primaryKey(),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    playerId: integer('player_id')
+      .notNull()
+      .references(() => players.id, { onDelete: 'cascade' }),
+    questionIndex: integer('question_index').notNull(),
+    emoji: text().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex('reactions_player_question_idx').on(
+      t.playerId,
+      t.questionIndex,
+    ),
+    index('reactions_room_idx').on(t.roomId),
+  ],
+)
+
 // Who is in the room's voice chat. A row counts while seen_at is recent; `speaking` lets the
 // players who didn't join see who is talking
 export const voiceMembers = pgTable(

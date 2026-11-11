@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 
 import { Logo } from '@/components/logo'
+import { canonical } from '@/lib/site'
 
 export const Route = createFileRoute('/privacy')({
   head: () => ({
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/privacy')({
         content: 'شنوّة المعطيات اللي نجمعوها في First Date وكيفاش نستعملوها.',
       },
     ],
+    links: [canonical('/privacy')],
   }),
   component: PrivacyPage,
 })

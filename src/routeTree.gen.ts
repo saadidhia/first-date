@@ -10,17 +10,30 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SirRouteImport } from './routes/sir'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminFunnelRouteImport } from './routes/admin_.funnel'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
+import { Route as AiIdRouteImport } from './routes/ai.$id'
+import { Route as GuidesIndexRouteImport } from './routes/guides.index'
+import { Route as GuidesSlugRouteImport } from './routes/guides.$slug'
+import { Route as QuestionsIndexRouteImport } from './routes/questions.index'
+import { Route as QuestionsTopicRouteImport } from './routes/questions.$topic'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -38,6 +51,16 @@ const SirRoute = SirRouteImport.update({
   path: '/sir',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminFunnelRoute = AdminFunnelRouteImport.update({
   id: '/admin_/funnel',
   path: '/admin/funnel',
@@ -53,6 +76,31 @@ const AdminPlayersRoute = AdminPlayersRouteImport.update({
   path: '/admin/players',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AiIdRoute = AiIdRouteImport.update({
+  id: '/ai/$id',
+  path: '/ai/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesIndexRoute = GuidesIndexRouteImport.update({
+  id: '/guides/',
+  path: '/guides/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidesSlugRoute = GuidesSlugRouteImport.update({
+  id: '/guides/$slug',
+  path: '/guides/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuestionsIndexRoute = QuestionsIndexRouteImport.update({
+  id: '/questions/',
+  path: '/questions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuestionsTopicRoute = QuestionsTopicRouteImport.update({
+  id: '/questions/$topic',
+  path: '/questions/$topic',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
   id: '/room/$code',
   path: '/room/$code',
@@ -61,77 +109,133 @@ const RoomCodeRoute = RoomCodeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
+  '/ai/$id': typeof AiIdRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/questions/$topic': typeof QuestionsTopicRoute
   '/room/$code': typeof RoomCodeRoute
+  '/guides/': typeof GuidesIndexRoute
+  '/questions/': typeof QuestionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin/funnel': typeof AdminFunnelRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
+  '/ai/$id': typeof AiIdRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/questions/$topic': typeof QuestionsTopicRoute
   '/room/$code': typeof RoomCodeRoute
+  '/guides': typeof GuidesIndexRoute
+  '/questions': typeof QuestionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/privacy': typeof PrivacyRoute
   '/sir': typeof SirRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/terms': typeof TermsRoute
   '/admin_/funnel': typeof AdminFunnelRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
+  '/ai/$id': typeof AiIdRoute
+  '/guides/$slug': typeof GuidesSlugRoute
+  '/questions/$topic': typeof QuestionsTopicRoute
   '/room/$code': typeof RoomCodeRoute
+  '/guides/': typeof GuidesIndexRoute
+  '/questions/': typeof QuestionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/sitemap.xml'
+    | '/terms'
     | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
+    | '/ai/$id'
+    | '/guides/$slug'
+    | '/questions/$topic'
     | '/room/$code'
+    | '/guides/'
+    | '/questions/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/sitemap.xml'
+    | '/terms'
     | '/admin/funnel'
     | '/admin/messages'
     | '/admin/players'
+    | '/ai/$id'
+    | '/guides/$slug'
+    | '/questions/$topic'
     | '/room/$code'
+    | '/guides'
+    | '/questions'
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/admin'
     | '/privacy'
     | '/sir'
+    | '/sitemap.xml'
+    | '/terms'
     | '/admin_/funnel'
     | '/admin_/messages'
     | '/admin_/players'
+    | '/ai/$id'
+    | '/guides/$slug'
+    | '/questions/$topic'
     | '/room/$code'
+    | '/guides/'
+    | '/questions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRoute
   PrivacyRoute: typeof PrivacyRoute
   SirRoute: typeof SirRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TermsRoute: typeof TermsRoute
   AdminFunnelRoute: typeof AdminFunnelRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
+  AiIdRoute: typeof AiIdRoute
+  GuidesSlugRoute: typeof GuidesSlugRoute
+  QuestionsTopicRoute: typeof QuestionsTopicRoute
   RoomCodeRoute: typeof RoomCodeRoute
+  GuidesIndexRoute: typeof GuidesIndexRoute
+  QuestionsIndexRoute: typeof QuestionsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -141,6 +245,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -164,6 +275,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SirRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin_/funnel': {
       id: '/admin_/funnel'
       path: '/admin/funnel'
@@ -185,6 +310,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPlayersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ai/$id': {
+      id: '/ai/$id'
+      path: '/ai/$id'
+      fullPath: '/ai/$id'
+      preLoaderRoute: typeof AiIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/': {
+      id: '/guides/'
+      path: '/guides'
+      fullPath: '/guides/'
+      preLoaderRoute: typeof GuidesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guides/$slug': {
+      id: '/guides/$slug'
+      path: '/guides/$slug'
+      fullPath: '/guides/$slug'
+      preLoaderRoute: typeof GuidesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/questions/': {
+      id: '/questions/'
+      path: '/questions'
+      fullPath: '/questions/'
+      preLoaderRoute: typeof QuestionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/questions/$topic': {
+      id: '/questions/$topic'
+      path: '/questions/$topic'
+      fullPath: '/questions/$topic'
+      preLoaderRoute: typeof QuestionsTopicRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/room/$code': {
       id: '/room/$code'
       path: '/room/$code'
@@ -197,13 +357,21 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   AdminRoute: AdminRoute,
   PrivacyRoute: PrivacyRoute,
   SirRoute: SirRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TermsRoute: TermsRoute,
   AdminFunnelRoute: AdminFunnelRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
+  AiIdRoute: AiIdRoute,
+  GuidesSlugRoute: GuidesSlugRoute,
+  QuestionsTopicRoute: QuestionsTopicRoute,
   RoomCodeRoute: RoomCodeRoute,
+  GuidesIndexRoute: GuidesIndexRoute,
+  QuestionsIndexRoute: QuestionsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

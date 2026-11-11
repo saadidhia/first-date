@@ -14,12 +14,16 @@ import {
   Timer,
 } from 'lucide-react'
 
+import { AdSenseScript } from '@/components/adsense'
+import { SiteFooter } from '@/components/content-shell'
 import { GenderPicker } from '@/components/gender-picker'
 import { ModePicker, type RoomMode } from '@/components/mode-picker'
 import { Logo } from '@/components/logo'
 import { TunisiaFlag } from '@/components/tunisia-flag'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { GUIDES } from '@/lib/guides'
+import { canonical } from '@/lib/site'
 import { createRoom, joinRoom } from '@/lib/room.functions'
 import {
   type Gender,
@@ -34,6 +38,7 @@ import {
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/')({
+  head: () => ({ links: [canonical('/')] }),
   component: Home,
 })
 
@@ -122,6 +127,7 @@ const FAQ = [
 function Home() {
   return (
     <div className="glow-bg min-h-screen overflow-x-hidden">
+      <AdSenseScript />
       {/* Hero: wedding-day couple with the Tunisian flag */}
       <section className="relative isolate min-h-[36rem] overflow-hidden md:min-h-[42rem]">
         <img
@@ -141,6 +147,12 @@ function Home() {
             >
               كيفاش نلعبو؟
             </a>
+            <Link
+              to="/guides"
+              className="hidden rounded-full px-4 py-2 text-white/80 transition hover:text-white sm:inline-block"
+            >
+              مقالات
+            </Link>
             <a
               href="#start"
               className="rounded-full border border-white/20 bg-black/30 px-4 py-2 font-medium text-white backdrop-blur transition hover:bg-black/50"
@@ -262,6 +274,45 @@ function Home() {
           </div>
         </section>
 
+        <section className="pb-24">
+          <SectionHeading eyebrow="مقالات ونصائح" title="باش تعرفو بعضكم خير" />
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {GUIDES.slice(0, 3).map((g) => (
+              <Link
+                key={g.slug}
+                to="/guides/$slug"
+                params={{ slug: g.slug }}
+                className="rounded-3xl border border-border bg-card/60 p-6 transition hover:border-primary/40 hover:bg-card"
+              >
+                <span className="text-3xl" aria-hidden>
+                  {g.emoji}
+                </span>
+                <h3 className="mt-3 font-display text-lg font-semibold">
+                  {g.title}
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                  {g.description}
+                </p>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-6 text-center">
+            <Link
+              to="/guides"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              كل المقالات ←
+            </Link>
+            <span className="mx-3 text-muted-foreground">·</span>
+            <Link
+              to="/questions"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              أمثلة من الأسئلة ←
+            </Link>
+          </div>
+        </section>
+
         <section className="mx-auto max-w-reading pb-24">
           <SectionHeading eyebrow="أسئلة تتعاود" title="عندك سؤال؟" />
           <div className="mt-8 space-y-3">
@@ -291,21 +342,7 @@ function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
-        <span className="inline-flex items-center gap-2">
-          <TunisiaFlag className="h-3.5 w-auto" />
-          <span dir="ltr">First Date</span> على الطريقة التونسية · صنعت في تونس
-          بالحب
-        </span>
-        <div className="mt-3">
-          <Link
-            to="/privacy"
-            className="text-xs underline hover:text-foreground"
-          >
-            سياسة الخصوصية
-          </Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }

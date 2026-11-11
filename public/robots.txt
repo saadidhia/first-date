@@ -1,0 +1,11 @@
+User-agent: *
+Disallow: /room/
+Disallow: /ai/
+Disallow: /admin
+Disallow: /sir
+
+# AdSense's crawler must be able to read every page it reviews
+User-agent: Mediapartners-Google
+Allow: /
+
+Sitemap: https://first-date.app/sitemap.xml
