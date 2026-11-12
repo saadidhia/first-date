@@ -17,7 +17,6 @@ import { Route as SirRouteImport } from './routes/sir'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminFunnelRouteImport } from './routes/admin_.funnel'
-import { Route as AdminGamesRouteImport } from './routes/admin_.games'
 import { Route as AdminMessagesRouteImport } from './routes/admin_.messages'
 import { Route as AdminPlayersRouteImport } from './routes/admin_.players'
 import { Route as AiIdRouteImport } from './routes/ai.$id'
@@ -65,11 +64,6 @@ const TermsRoute = TermsRouteImport.update({
 const AdminFunnelRoute = AdminFunnelRouteImport.update({
   id: '/admin_/funnel',
   path: '/admin/funnel',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminGamesRoute = AdminGamesRouteImport.update({
-  id: '/admin_/games',
-  path: '/admin/games',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminMessagesRoute = AdminMessagesRouteImport.update({
@@ -122,7 +116,6 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin/funnel': typeof AdminFunnelRoute
-  '/admin/games': typeof AdminGamesRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/ai/$id': typeof AiIdRoute
@@ -141,7 +134,6 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin/funnel': typeof AdminFunnelRoute
-  '/admin/games': typeof AdminGamesRoute
   '/admin/messages': typeof AdminMessagesRoute
   '/admin/players': typeof AdminPlayersRoute
   '/ai/$id': typeof AiIdRoute
@@ -161,7 +153,6 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/terms': typeof TermsRoute
   '/admin_/funnel': typeof AdminFunnelRoute
-  '/admin_/games': typeof AdminGamesRoute
   '/admin_/messages': typeof AdminMessagesRoute
   '/admin_/players': typeof AdminPlayersRoute
   '/ai/$id': typeof AiIdRoute
@@ -182,7 +173,6 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin/funnel'
-    | '/admin/games'
     | '/admin/messages'
     | '/admin/players'
     | '/ai/$id'
@@ -201,7 +191,6 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin/funnel'
-    | '/admin/games'
     | '/admin/messages'
     | '/admin/players'
     | '/ai/$id'
@@ -220,7 +209,6 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/terms'
     | '/admin_/funnel'
-    | '/admin_/games'
     | '/admin_/messages'
     | '/admin_/players'
     | '/ai/$id'
@@ -240,7 +228,6 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TermsRoute: typeof TermsRoute
   AdminFunnelRoute: typeof AdminFunnelRoute
-  AdminGamesRoute: typeof AdminGamesRoute
   AdminMessagesRoute: typeof AdminMessagesRoute
   AdminPlayersRoute: typeof AdminPlayersRoute
   AiIdRoute: typeof AiIdRoute
@@ -307,13 +294,6 @@ declare module '@tanstack/react-router' {
       path: '/admin/funnel'
       fullPath: '/admin/funnel'
       preLoaderRoute: typeof AdminFunnelRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin_/games': {
-      id: '/admin_/games'
-      path: '/admin/games'
-      fullPath: '/admin/games'
-      preLoaderRoute: typeof AdminGamesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin_/messages': {
@@ -384,7 +364,6 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TermsRoute: TermsRoute,
   AdminFunnelRoute: AdminFunnelRoute,
-  AdminGamesRoute: AdminGamesRoute,
   AdminMessagesRoute: AdminMessagesRoute,
   AdminPlayersRoute: AdminPlayersRoute,
   AiIdRoute: AiIdRoute,

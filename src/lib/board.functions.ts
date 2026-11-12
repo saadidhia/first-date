@@ -217,7 +217,7 @@ export const getBoardState = createServerFn({ method: 'POST' })
             // A couple's 🚧 obstacle on the last roll, if they hit one
             obstacle:
               b.obstacle && b.obstacle.seq === b.roll?.seq
-                ? b.obstacle.text
+                ? { text: b.obstacle.text, move: b.obstacle.move ?? -2 }
                 : null,
             // Nobody rolls before this: time to read the last question's answers
             holdUntil: b.holdUntil ?? 0,
