@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Mic, MicOff } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Eye, Mic, MicOff } from 'lucide-react'
 
 import { type AdminGame, getAdminVoice } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
@@ -121,6 +122,15 @@ export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
         · بدات {timeAgo(game.createdAt)}
       </p>
       {game.board && game.phase !== 'waiting' && <BoardLine game={game} />}
+      {game.phase !== 'done' && game.players.length > 0 && (
+        <Link
+          to="/admin/watch/$code"
+          params={{ code: game.code }}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold transition hover:bg-gold/20"
+        >
+          <Eye className="size-3.5" /> تفرّج على اللعبة
+        </Link>
+      )}
     </li>
   )
 }
