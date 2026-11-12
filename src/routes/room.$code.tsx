@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Check,
   Copy,
-  Download,
   Lock,
   Send,
   Share2,
@@ -13,6 +12,8 @@ import {
   X,
 } from 'lucide-react'
 
+import { BoardRoom } from '@/components/board-room'
+import { ShareResultButton } from '@/components/share-result'
 import { Confetti } from '@/components/confetti'
 import { GenderPicker } from '@/components/gender-picker'
 import { Logo } from '@/components/logo'
@@ -20,12 +21,6 @@ import { RoomMusic } from '@/components/room-music'
 import { SfxButton } from '@/components/sfx-toggle'
 import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   getMyResult,
@@ -53,15 +48,8 @@ import {
 } from '@/lib/session'
 import { REACTIONS } from '@/lib/reactions'
 import { rewardedAdsEnabled, showRewardedAd } from '@/lib/rewarded-ad'
-import {
-  type ShareCardInput,
-  canShareImage,
-  downloadImage,
-  makeShareCard,
-  shareImage,
-} from '@/lib/share-card'
 import { playSfx } from '@/lib/sfx'
-import { useScreenshotGuard, withGuardPaused } from '@/lib/use-screenshot-guard'
+import { useScreenshotGuard } from '@/lib/use-screenshot-guard'
 import { useVoice } from '@/lib/use-voice'
 import { cn } from '@/lib/utils'
 
@@ -85,9 +73,19 @@ function RoomPage() {
   const [token, setToken] = useState<string | null | undefined>(undefined)
 
   useEffect(() => setToken(getToken(code)), [code])
+  // A ثنية العرس room shows the board instead of the chat
+  const [board, setBoard] = useState<boolean | undefined>(undefined)
+  useEffect(() => {
+    if (!token) return
+    getRoomPreview({ data: { code } })
+      .then((p) => setBoard(!!p?.board))
+      .catch(() => setBoard(false))
+  }, [code, token])
 
   if (token === undefined) return <FullScreenLoader />
   if (!token) return <JoinGate code={code} onJoined={setToken} />
+  if (board === undefined) return <FullScreenLoader />
+  if (board) return <BoardRoom code={code} token={token} />
   return <ChatRoom code={code} token={token} />
 }
 
@@ -189,7 +187,7 @@ function JoinGate({
               <p className="mt-2 text-sm text-muted-foreground">
                 {preview.started
                   ? 'ما عادش تنجم تدخل. تنجم تبدا لعبة متاعك.'
-                  : preview.mode === 'friends'
+                  : preview.maxPlayers > 2
                     ? `فيها ${preview.maxPlayers} ديجا. تنجم تبدا لعبة متاعك.`
                     : 'فيها زوز لاعبين ديجا. تنجم تبدا لعبة متاعك.'}
               </p>
@@ -210,19 +208,29 @@ function JoinGate({
                 {preview.hostGender === 'female' ? 'تستنّى' : 'يستنّى'} فيك 💌
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                30 سؤال، تجاوبو في نفس الوقت، وفي الآخر كل واحد ياخذ تقرير سرّي.
+                {preview.board
+                  ? preview.mode === 'board_friends'
+                    ? 'لعبة لوحة مع الصحاب: ترمي الزهر، صحابك يحكمو عليك، واللي يوصل للكرسي الأوّل هو ملك القعدة 👑'
+                    : 'لعبة لوحة: ترميو الزهر، تجاوبو على أسئلة، وتمشيو من التعارف حتّى العرس 🎲'
+                  : '30 سؤال، تجاوبو في نفس الوقت، وفي الآخر كل واحد ياخذ تقرير سرّي.'}
               </p>
               <span
                 className={cn(
                   'mt-3 inline-block rounded-full px-3 py-1 text-xs font-semibold',
-                  preview.mode === 'friends'
-                    ? 'bg-sidi-blue/15 text-sidi-blue'
-                    : 'bg-primary/15 text-primary',
+                  preview.board
+                    ? 'bg-gold/15 text-gold'
+                    : preview.mode === 'friends'
+                      ? 'bg-sidi-blue/15 text-sidi-blue'
+                      : 'bg-primary/15 text-primary',
                 )}
               >
-                {preview.mode === 'friends'
-                  ? `🤝 قعدة صحاب · ${preview.players}/${preview.maxPlayers}`
-                  : '💘 First Date'}
+                {preview.mode === 'board_friends'
+                  ? `👑 ملك القعدة · ${preview.players}/${preview.maxPlayers}`
+                  : preview.mode === 'board'
+                    ? '🎲 ثنية العرس'
+                    : preview.mode === 'friends'
+                      ? `🤝 قعدة صحاب · ${preview.players}/${preview.maxPlayers}`
+                      : '💘 First Date'}
               </span>
               <div className="mt-6 space-y-4 text-start">
                 <div>
@@ -257,9 +265,9 @@ function JoinGate({
               >
                 {busy
                   ? 'لحظة…'
-                  : preview.mode === 'friends'
-                    ? 'ادخل للّعبة'
-                    : 'ادخل للموعد'}
+                  : preview.mode === 'date'
+                    ? 'ادخل للموعد'
+                    : 'ادخل للّعبة'}
               </Button>
             </form>
           )}
@@ -2093,128 +2101,6 @@ function HalfwayCard({
           تشوفو التقرير السرّي 🤫
         </p>
       </div>
-    </div>
-  )
-}
-
-/**
- * Makes a story image of the result (score only, no answers) and shows it in a preview, with
- * "share" on phones (the share sheet, for an Instagram story) and "download" everywhere.
- */
-function ShareResultButton({
-  input,
-  friends,
-}: {
-  input: ShareCardInput
-  friends: boolean
-}) {
-  const [busy, setBusy] = useState(false)
-  const [image, setImage] = useState<{
-    blob: Blob
-    url: string
-    share: boolean
-  } | null>(null)
-
-  useEffect(() => {
-    if (!image) return
-    return () => URL.revokeObjectURL(image.url)
-  }, [image])
-
-  async function open() {
-    setBusy(true)
-    try {
-      const blob = await makeShareCard(input)
-      setImage({
-        blob,
-        url: URL.createObjectURL(blob),
-        share: canShareImage(blob),
-      })
-    } catch {
-      toast.error('ما نجّمناش نعملو الصورة، عاود جرّب')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function share() {
-    if (!image) return
-    try {
-      const done = await withGuardPaused(() =>
-        shareImage(image.blob, `${input.cta} ${window.location.origin}`),
-      )
-      if (done) setImage(null)
-    } catch {
-      // The share sheet failed: the download still works
-      toast.error('ما نجّمناش نفتحو المشاركة، سجّل الصورة وحطّها في الستوري')
-    }
-  }
-
-  function download() {
-    if (!image) return
-    downloadImage(image.blob)
-    toast.success('الصورة تسجّلت 📸 حطّها في الستوري من التليفون')
-  }
-
-  const btn = friends ? 'bubble-friends' : 'btn-love'
-  return (
-    <div>
-      <Button
-        onClick={open}
-        disabled={busy}
-        className={cn(
-          'h-12 w-full rounded-xl text-base font-semibold text-white',
-          btn,
-        )}
-      >
-        <Share2 className="size-4" />
-        {busy ? 'لحظة…' : 'شارك النتيجة في الستوري 📸'}
-      </Button>
-      <p className="mt-1.5 text-center text-xs text-muted-foreground">
-        الصورة فيها النسبة برك، حتى جواب ما يبان 🤫
-      </p>
-
-      <Dialog open={!!image} onOpenChange={(o) => !o && setImage(null)}>
-        <DialogContent className="max-w-sm gap-3 rounded-3xl p-4 sm:max-w-sm">
-          <DialogTitle className="text-center font-display text-lg">
-            صورة الستوري متاعك 📸
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            معاينة الصورة قبل ما تشاركها
-          </DialogDescription>
-          {image && (
-            <img
-              src={image.url}
-              alt="صورة النتيجة"
-              className="mx-auto max-h-[55dvh] w-auto rounded-2xl border border-border"
-            />
-          )}
-          <div className="grid gap-2">
-            {image?.share && (
-              <Button
-                onClick={share}
-                className={cn('h-11 rounded-xl text-white', btn)}
-              >
-                <Share2 className="size-4" /> شارك (ستوري، واتساب…)
-              </Button>
-            )}
-            <Button
-              onClick={download}
-              variant={image?.share ? 'outline' : 'default'}
-              className={cn(
-                'h-11 rounded-xl',
-                !image?.share && cn('text-white', btn),
-              )}
-            >
-              <Download className="size-4" /> سجّل الصورة
-            </Button>
-            {!image?.share && (
-              <p className="text-center text-xs text-muted-foreground">
-                سجّلها وابعثها لتليفونك، وحطّها في الستوري من إنستغرام 📲
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

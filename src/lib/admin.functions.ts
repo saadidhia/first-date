@@ -11,6 +11,7 @@ import {
   voiceMembers,
 } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
+import { LAST, MAX_TURNS, arrivedAt, turnsUsed } from './board'
 import { type AnswerLite, computeCompat } from './compat'
 
 // A player counts as "using the site now" if their room polled within this window
@@ -147,6 +148,9 @@ async function listGames(where: SQL | undefined, limit: number) {
       currentIndex: rooms.currentIndex,
       questions: sql<number>`jsonb_array_length(${rooms.questionIds})::int`,
       questionIds: rooms.questionIds,
+      board: rooms.board,
+      endedAt: rooms.endedAt,
+      source: rooms.source,
       createdAt: rooms.createdAt,
     })
     .from(rooms)
@@ -172,12 +176,49 @@ async function listGames(where: SQL | undefined, limit: number) {
         .orderBy(asc(players.id))
     : []
   const answersFor = await answersOf(rows.map((r) => r.id))
-  return rows.map(({ questionIds, ...r }) => {
+  return rows.map(({ questionIds, board, endedAt, ...r }) => {
     const roster = people.filter((p) => p.roomId === r.id)
     const mode = asMode(r.mode)
+    const nameOf = (id: number) => roster.find((p) => p.id === id)?.name ?? '؟'
+    // The last time anyone in the game had its page open
+    const lastSeen = roster.reduce(
+      (t, p) => Math.max(t, p.lastSeenAt.getTime()),
+      r.createdAt.getTime(),
+    )
     return {
       ...r,
       mode,
+      /** The room's own type: date, friends, board (ثنية العرس) or board_friends (ملك القعدة) */
+      kind: (r.mode === 'friends' || r.mode === 'board' || r.mode === 'board_friends'
+        ? r.mode
+        : 'date') as 'date' | 'friends' | 'board' | 'board_friends',
+      endedAt: endedAt?.toISOString() ?? null,
+      lastSeenAt: new Date(lastSeen).toISOString(),
+      // ثنية العرس (couple) or ملك القعدة (friends): where everyone stands, and the turn
+      board: board
+        ? {
+            friends: !board.team,
+            turns: turnsUsed(board),
+            maxTurns: MAX_TURNS,
+            last: LAST,
+            step: board.step,
+            // How it ended: a couple won or not; friends' ranking by name
+            result: board.result
+              ? {
+                  won: board.result.won,
+                  turns: board.result.turns,
+                  ranking: (board.result.ranking ?? []).map(nameOf),
+                }
+              : null,
+            pos: board.team
+              ? [{ id: null, square: board.pos.team ?? 0, place: 0 }]
+              : board.order.map((id) => ({
+                  id,
+                  square: board.pos[String(id)] ?? 0,
+                  place: arrivedAt(board, id),
+                })),
+          }
+        : null,
       createdAt: r.createdAt.toISOString(),
       match: matchOf(
         mode,
@@ -205,7 +246,7 @@ export type AdminGame = Awaited<ReturnType<typeof listGames>>[number]
 export const getAdminGames = createServerFn({ method: 'GET' })
   .validator(
     z.object({
-      mode: z.enum(['all', 'date', 'friends']),
+      mode: z.enum(['all', 'date', 'friends', 'board', 'board_friends']),
       q: z.string().trim().max(50),
       limit: z.number().int().min(1).max(500),
     }),

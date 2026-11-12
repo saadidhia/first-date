@@ -10,6 +10,10 @@ export type ShareCardInput = {
   /** e.g. "سارة 💘 أحمد" */
   names: string
   score: number
+  /** What the ring shows in its middle instead of "score%" (a medal, a number of turns) */
+  big?: string
+  /** How full the ring is, 0 to 1 (defaults to score / 100) */
+  progress?: number
   /** e.g. "💞 تفاهم كبير" */
   line: string
   /** Optional second line, e.g. a group title */
@@ -132,7 +136,7 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   ring.addColorStop(0, accent)
   ring.addColorStop(1, GOLD)
   ctx.strokeStyle = ring
-  const pct = Math.max(0, Math.min(100, input.score)) / 100
+  const pct = Math.max(0, Math.min(1, input.progress ?? input.score / 100))
   ctx.beginPath()
   ctx.arc(
     cx,
@@ -145,7 +149,7 @@ export async function makeShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.direction = 'ltr'
   ctx.font = `700 210px ${HEAD}`
   ctx.fillStyle = '#ffffff'
-  ctx.fillText(`${input.score}%`, cx, cy + 10)
+  ctx.fillText(input.big ?? `${input.score}%`, cx, cy + 10)
   ctx.direction = 'rtl'
 
   const y = drawText(ctx, input.line, 1250, `700 64px ${HEAD}`, '#ffffff', 84)

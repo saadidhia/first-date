@@ -11,6 +11,7 @@ import { authorize } from './room-auth'
 import { computeCompat } from './compat'
 import { computeGroupReport, computeRounds } from './group'
 import { computeMarriageReport } from './marriage'
+import { initBoard } from './board'
 import { REACTIONS } from './reactions'
 import {
   INTRO_SECONDS,
@@ -32,10 +33,19 @@ import {
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const ONLINE_MS = 9000
-// A date is one host and one guest; a friends room takes up to 7 people and starts when the host says so
-const MAX_PLAYERS = { date: 2, friends: 7 } as const
+// A date is one host and one guest; a friends room takes up to 7 people and starts when the host says so.
+// ثنية العرس: a couple ('board', starts when the partner joins) or 2 to 4 friends ('board_friends').
+const MAX_PLAYERS = { date: 2, friends: 7, board: 2, board_friends: 4 } as const
+type RoomKind = keyof typeof MAX_PLAYERS
+/** The question mode of a chat room (date or friends) */
 const asMode = (m: string) =>
   (m === 'friends' ? 'friends' : 'date') as 'date' | 'friends'
+/** Any kind of room, board games included */
+const kindOf = (m: string): RoomKind =>
+  m === 'friends' || m === 'board' || m === 'board_friends' ? m : 'date'
+const isBoard = (k: RoomKind) => k === 'board' || k === 'board_friends'
+/** Rooms that wait in the lobby for the host to press start (and can't be joined after) */
+const hostStarts = (k: RoomKind) => k === 'friends' || k === 'board_friends'
 
 function makeCode() {
   let c = ''
@@ -55,7 +65,7 @@ const codeSchema = z
   .trim()
   .transform((s) => s.toUpperCase())
   .pipe(z.string().regex(/^[A-Z0-9]{6}$/, 'الكود لازم يكون 6 حروف'))
-const modeSchema = z.enum(['date', 'friends'])
+const modeSchema = z.enum(['date', 'friends', 'board', 'board_friends'])
 const authSchema = z.object({ code: codeSchema, token: z.string().uuid() })
 
 type Room = typeof rooms.$inferSelect
@@ -175,7 +185,11 @@ export const createRoom = createServerFn({ method: 'POST' })
     }),
   )
   .handler(async ({ data }) => {
-    const questionIds = pickQuestionIds(data.mode, data.seen)
+    // A board game picks its questions as the pawns land on them
+    const questionIds =
+      data.mode === 'board' || data.mode === 'board_friends'
+        ? []
+        : pickQuestionIds(data.mode, data.seen)
     const source = trafficSource(data.ref, getRequestHeader('user-agent'))
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = makeCode()
@@ -212,8 +226,8 @@ export const joinRoom = createServerFn({ method: 'POST' })
         .for('update')
         .limit(1)
       if (!room) throw new Error('الكود هذا غالط، ما فمّا حتى لعبة بيه')
-      const mode = asMode(room.mode)
-      if (mode === 'friends' && room.phase !== 'waiting')
+      const mode = kindOf(room.mode)
+      if (hostStarts(mode) && room.phase !== 'waiting')
         throw new Error('اللعبة بدات، ما عادش تنجم تدخل')
       const [{ count }] = await tx
         .select({ count: sql<number>`count(*)::int` })
@@ -221,19 +235,37 @@ export const joinRoom = createServerFn({ method: 'POST' })
         .where(eq(players.roomId, room.id))
       if (count >= MAX_PLAYERS[mode]) {
         throw new Error(
-          mode === 'friends'
-            ? 'اللعبة هذي كاملة، فيها 7 ديجا'
+          MAX_PLAYERS[mode] > 2
+            ? `اللعبة هذي كاملة، فيها ${MAX_PLAYERS[mode]} ديجا`
             : 'اللعبة هذي كاملة، فيها زوز لاعبين ديجا',
         )
       }
       const token = crypto.randomUUID()
-      await tx.insert(players).values({
-        roomId: room.id,
-        name: data.name,
-        gender: data.gender,
-        role: 'guest',
-        token,
-      })
+      const [guest] = await tx
+        .insert(players)
+        .values({
+          roomId: room.id,
+          name: data.name,
+          gender: data.gender,
+          role: 'guest',
+          token,
+        })
+        .returning({ id: players.id })
+      // A couple's board game starts as soon as the partner is in: the host rolls first
+      if (mode === 'board') {
+        const [host] = await tx
+          .select({ id: players.id })
+          .from(players)
+          .where(and(eq(players.roomId, room.id), eq(players.role, 'host')))
+          .limit(1)
+        await tx
+          .update(rooms)
+          .set({
+            phase: 'board',
+            board: initBoard([host?.id ?? guest.id, guest.id], true, Date.now()),
+          })
+          .where(and(eq(rooms.id, room.id), eq(rooms.phase, 'waiting')))
+      }
       // A date starts as soon as the guest is in; friends wait for the host to press start
       if (mode === 'date') {
         await tx
@@ -262,6 +294,26 @@ export const startRoom = createServerFn({ method: 'POST' })
       .from(players)
       .where(eq(players.roomId, room.id))
     if (count < 2) throw new Error('استنّى صاحب واحد على الأقل يدخل')
+    if (kindOf(room.mode) === 'board_friends') {
+      // Turn order: the host first, then in the order they joined
+      const roster = await db
+        .select({ id: players.id })
+        .from(players)
+        .where(eq(players.roomId, room.id))
+        .orderBy(asc(players.id))
+      await db
+        .update(rooms)
+        .set({
+          phase: 'board',
+          board: initBoard(
+            roster.map((p) => p.id),
+            false,
+            Date.now(),
+          ),
+        })
+        .where(and(eq(rooms.id, room.id), eq(rooms.phase, 'waiting')))
+      return { ok: true }
+    }
     await db
       .update(rooms)
       .set({
@@ -282,7 +334,7 @@ export const kickPlayer = createServerFn({ method: 'POST' })
   .validator(authSchema.extend({ playerId: z.number().int() }))
   .handler(async ({ data }) => {
     const { room, player } = await authorize(data.code, data.token)
-    if (room.mode !== 'friends')
+    if (!hostStarts(kindOf(room.mode)))
       throw new Error('ما تنجّمش تنحّي لاعب في اللعبة هذي')
     if (player.role !== 'host')
       throw new Error('اللي حلّ اللعبة برك ينجّم ينحّي لاعب')
@@ -859,7 +911,7 @@ export const getRoomPreview = createServerFn({ method: 'GET' })
       .from(players)
       .where(eq(players.roomId, room.id))
     const host = roster.find((p) => p.role === 'host')
-    const mode = asMode(room.mode)
+    const mode = kindOf(room.mode)
     return {
       code: room.code,
       mode,
@@ -868,7 +920,8 @@ export const getRoomPreview = createServerFn({ method: 'GET' })
       players: roster.length,
       maxPlayers: MAX_PLAYERS[mode],
       // A friends room can't be joined once it started
-      started: mode === 'friends' && room.phase !== 'waiting',
+      started: hostStarts(mode) && room.phase !== 'waiting',
+      board: isBoard(mode),
       full: roster.length >= MAX_PLAYERS[mode],
     }
   })

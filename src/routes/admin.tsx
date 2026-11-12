@@ -439,7 +439,29 @@ function MatchSection({ match }: { match: Stats['match'] }) {
 
 function RecentList({ games }: { games: Stats['recent'] }) {
   const voice = useAdminVoice()
+  // Playing right now: not finished, and at least one player's page is open
+  const live = games.filter((g) => g.phase !== 'done' && g.players.some((p) => p.online))
   return (
+    <>
+      <section className="mt-8 rounded-3xl border border-emerald-500/30 bg-card/85 p-5">
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+          <span className="relative flex size-2.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-emerald-400" />
+          </span>
+          يلعبو توّا
+          <span className="text-sm font-normal text-muted-foreground">({live.length})</span>
+        </h2>
+        {live.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">حتى حد ما يلعب توّا.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-border">
+            {live.map((g) => (
+              <GameRow key={g.id} game={g} voice={voice} />
+            ))}
+          </ul>
+        )}
+      </section>
     <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-lg font-semibold">شكون كان en ligne في آخر ساعة</h2>
@@ -455,5 +477,6 @@ function RecentList({ games }: { games: Stats['recent'] }) {
         </ul>
       )}
     </section>
+    </>
   )
 }

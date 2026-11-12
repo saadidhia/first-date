@@ -1,10 +1,37 @@
 import { cn } from '@/lib/utils'
 
-export type RoomMode = 'date' | 'friends'
+export type RoomMode = 'date' | 'friends' | 'board' | 'board_friends'
 
-const OPTIONS: { value: RoomMode; label: string; hint: string; emoji: string }[] = [
-  { value: 'date', label: 'First Date', hint: 'تعارف بين راجل ومرا، وفي الآخر الزواج', emoji: '💘' },
-  { value: 'friends', label: 'صحاب', hint: 'من 2 لـ 7 صحاب: قدّاش تعرفو بعضكم بالحق؟', emoji: '🤝' },
+const OPTIONS: {
+  value: RoomMode
+  label: string
+  hint: string
+  emoji: string
+}[] = [
+  {
+    value: 'date',
+    label: 'First Date',
+    hint: 'تعارف بين راجل ومرا، وفي الآخر الزواج',
+    emoji: '💘',
+  },
+  {
+    value: 'friends',
+    label: 'صحاب',
+    hint: 'من 2 لـ 7 صحاب: قدّاش تعرفو بعضكم بالحق؟',
+    emoji: '🤝',
+  },
+  {
+    value: 'board',
+    label: 'ثنية العرس',
+    hint: 'لعبة لوحة للزوز: من التعارف حتّى العرس في 20 دورة',
+    emoji: '🎲',
+  },
+  {
+    value: 'board_friends',
+    label: 'ملك القعدة',
+    hint: 'لعبة لوحة من 2 لـ 4 صحاب: صحابك يحكمو عليك، وشكون يوصل للكرسي الأوّل؟',
+    emoji: '👑',
+  },
 ]
 
 /** Chosen by the host before creating a room: it decides which question bank is used. */
@@ -16,7 +43,11 @@ export function ModePicker({
   onChange: (m: RoomMode) => void
 }) {
   return (
-    <div role="radiogroup" aria-label="نوع اللعبة" className="grid grid-cols-2 gap-2">
+    <div
+      role="radiogroup"
+      aria-label="نوع اللعبة"
+      className="grid grid-cols-2 gap-2"
+    >
       {OPTIONS.map((o) => (
         <button
           key={o.value}
@@ -29,7 +60,9 @@ export function ModePicker({
             value === o.value
               ? o.value === 'date'
                 ? 'border-primary bg-primary/15 ring-1 ring-primary'
-                : 'border-sidi-blue bg-sidi-blue/15 ring-1 ring-sidi-blue'
+                : o.value === 'friends'
+                  ? 'border-sidi-blue bg-sidi-blue/15 ring-1 ring-sidi-blue'
+                  : 'border-gold bg-gold/15 ring-1 ring-gold'
               : 'border-border bg-background/60 hover:border-muted-foreground',
           )}
         >
@@ -37,7 +70,9 @@ export function ModePicker({
             <span className="text-2xl">{o.emoji}</span>
             <span dir={o.value === 'date' ? 'ltr' : undefined}>{o.label}</span>
           </div>
-          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{o.hint}</div>
+          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {o.hint}
+          </div>
         </button>
       ))}
     </div>

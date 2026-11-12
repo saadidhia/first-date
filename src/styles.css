@@ -308,6 +308,26 @@ code {
   animation: banner-pop 2.8s ease-out both;
 }
 
+/* ثنية العرس: a pawn hops on each square, the dice tumbles before showing its face */
+@keyframes pawn-hop {
+  0% { transform: translateY(0) scale(1, 1); }
+  45% { transform: translateY(-16px) scale(0.95, 1.05); }
+  85% { transform: translateY(0) scale(1.08, 0.92); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
+.pawn-hop {
+  animation: pawn-hop 0.26s ease-out both;
+}
+@keyframes dice-tumble {
+  0% { transform: translate(60px, -30px) rotate(0deg); }
+  60% { transform: translate(-6px, 4px) rotate(600deg); }
+  80% { transform: translate(2px, -6px) rotate(700deg); }
+  100% { transform: translate(0, 0) rotate(720deg); }
+}
+.dice-tumble {
+  animation: dice-tumble 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pop-in,
   .bar-grow,
@@ -317,6 +337,10 @@ code {
   }
   .confetti-piece {
     display: none;
+  }
+  .pawn-hop,
+  .dice-tumble {
+    animation: none;
   }
   .emoji-float {
     animation: none;
