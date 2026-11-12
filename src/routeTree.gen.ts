@@ -25,6 +25,7 @@ import { Route as GuidesSlugRouteImport } from './routes/guides.$slug'
 import { Route as QuestionsIndexRouteImport } from './routes/questions.index'
 import { Route as QuestionsTopicRouteImport } from './routes/questions.$topic'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
+import { Route as AdminWatchCodeRouteImport } from './routes/admin_.watch.$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -106,6 +107,11 @@ const RoomCodeRoute = RoomCodeRouteImport.update({
   path: '/room/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminWatchCodeRoute = AdminWatchCodeRouteImport.update({
+  id: '/admin_/watch/$code',
+  path: '/admin/watch/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/room/$code': typeof RoomCodeRoute
   '/guides/': typeof GuidesIndexRoute
   '/questions/': typeof QuestionsIndexRoute
+  '/admin/watch/$code': typeof AdminWatchCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/room/$code': typeof RoomCodeRoute
   '/guides': typeof GuidesIndexRoute
   '/questions': typeof QuestionsIndexRoute
+  '/admin/watch/$code': typeof AdminWatchCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/room/$code': typeof RoomCodeRoute
   '/guides/': typeof GuidesIndexRoute
   '/questions/': typeof QuestionsIndexRoute
+  '/admin_/watch/$code': typeof AdminWatchCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/room/$code'
     | '/guides/'
     | '/questions/'
+    | '/admin/watch/$code'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/room/$code'
     | '/guides'
     | '/questions'
+    | '/admin/watch/$code'
   id:
     | '__root__'
     | '/'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/room/$code'
     | '/guides/'
     | '/questions/'
+    | '/admin_/watch/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   RoomCodeRoute: typeof RoomCodeRoute
   GuidesIndexRoute: typeof GuidesIndexRoute
   QuestionsIndexRoute: typeof QuestionsIndexRoute
+  AdminWatchCodeRoute: typeof AdminWatchCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/watch/$code': {
+      id: '/admin_/watch/$code'
+      path: '/admin/watch/$code'
+      fullPath: '/admin/watch/$code'
+      preLoaderRoute: typeof AdminWatchCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   RoomCodeRoute: RoomCodeRoute,
   GuidesIndexRoute: GuidesIndexRoute,
   QuestionsIndexRoute: QuestionsIndexRoute,
+  AdminWatchCodeRoute: AdminWatchCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

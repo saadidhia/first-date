@@ -11,8 +11,24 @@ import {
   voiceMembers,
 } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
-import { LAST, MAX_TURNS, arrivedAt, turnsUsed } from './board'
+import {
+  LAST,
+  MAX_TURNS,
+  type BoardState,
+  SQUARES,
+  arrivedAt,
+  boardQuestion,
+  rollerOf,
+  squareFor,
+  turnsUsed,
+} from './board'
 import { type AnswerLite, computeCompat } from './compat'
+import {
+  ROUND_LABEL,
+  categoryLabel,
+  questionFor,
+  roundFor,
+} from './questions'
 
 // A player counts as "using the site now" if their room polled within this window
 const ACTIVE_MS = 20_000
@@ -251,6 +267,165 @@ export const getAdminGames = createServerFn({ method: 'GET' })
  * Whether the site had nobody on it at some minute today (Tunisia time). Only minutes since
  * activity tracking started count; `since` is null when there is no data for today yet.
  */
+/** How far the room has revealed answers (same rule as the game), read-only. */
+function revealedUpTo(phase: string, index: number, total: number) {
+  if (phase === 'done') return total - 1
+  if (phase === 'reveal') return index
+  if (phase === 'waiting') return -1
+  return index - 1
+}
+
+/**
+ * A live, read-only view of one room for the admin to watch, by code. It never writes: it does
+ * not touch lastSeen, record activity, or advance the game, so watching is invisible and changes
+ * nothing. Questions are worded with a neutral (male) default, since the admin has no gender.
+ */
+export const getAdminRoom = createServerFn({ method: 'GET' })
+  .validator(z.object({ code: z.string().trim().toUpperCase() }))
+  .handler(async ({ data }) => {
+    if (!getAdminEmail()) throw new Error('ما عندكش الحق تشوف الصفحة هذي')
+    const [room] = await db
+      .select()
+      .from(rooms)
+      .where(eq(rooms.code, data.code))
+      .limit(1)
+    if (!room) return null
+    const roster = await db
+      .select()
+      .from(players)
+      .where(eq(players.roomId, room.id))
+      .orderBy(asc(players.id))
+    const pub = roster.map((p) => ({
+      id: p.id,
+      name: p.name,
+      gender: p.gender,
+      host: p.role === 'host',
+      online: Date.now() - p.lastSeenAt.getTime() < ACTIVE_MS,
+    }))
+    const nameOf = (id: number) => roster.find((p) => p.id === id)?.name ?? '؟'
+
+    // ثنية العرس / ملك القعدة: the board, read straight from the stored state
+    if (room.board) {
+      const b: BoardState = room.board
+      const about = (id: number) => {
+        const p = roster.find((x) => x.id === id)
+        return p ? { name: p.name, gender: p.gender } : null
+      }
+      const q = b.question
+        ? boardQuestion(b.question.id, null, about(b.question.by))
+        : null
+      const r = b.reveal ? boardQuestion(b.reveal.id, null, about(b.reveal.by)) : null
+      return {
+        kind: 'board' as const,
+        code: room.code,
+        friends: !b.team,
+        phase: room.phase,
+        players: pub,
+        board: {
+          team: b.team,
+          order: b.order,
+          turnOf: b.step === 'roll' ? rollerOf(b) : null,
+          turns: turnsUsed(b),
+          maxTurns: MAX_TURNS,
+          last: LAST,
+          step: b.step,
+          pos: b.pos,
+          roll: b.roll,
+          squares: SQUARES.map((_, i) => squareFor(i, b.team)),
+          question:
+            b.question && q
+              ? {
+                  by: b.question.by,
+                  byName: nameOf(b.question.by),
+                  kind: b.question.kind,
+                  text: q.text,
+                  options: q.options,
+                  moves: q.moves,
+                  answered: Object.keys(b.question.answers).map(Number),
+                }
+              : null,
+          reveal:
+            b.reveal && r
+              ? {
+                  byName: nameOf(b.reveal.by),
+                  kind: b.reveal.kind,
+                  text: r.text,
+                  options: r.options,
+                  answers: b.reveal.answers,
+                  delta: b.reveal.delta,
+                }
+              : null,
+          log: b.log,
+          result: b.result
+            ? {
+                ...b.result,
+                ranking: (b.result.ranking ?? []).map(nameOf),
+              }
+            : null,
+        },
+      }
+    }
+
+    // A chat game (date / friends): the revealed questions with each player's answer, and the
+    // current question with who has answered so far
+    const all = await db
+      .select()
+      .from(answers)
+      .where(eq(answers.roomId, room.id))
+    const ans = (pid: number, i: number) =>
+      all.find((a) => a.playerId === pid && a.questionIndex === i)
+    const total = room.questionIds.length
+    const upTo = revealedUpTo(room.phase, room.currentIndex, total)
+    const history = []
+    for (let i = 0; i <= upTo && room.phase !== 'waiting'; i++) {
+      const id = room.questionIds[i]
+      const round = roundFor(id)
+      const q = round ? null : questionFor(id, null)
+      history.push({
+        index: i,
+        category: round
+          ? ROUND_LABEL[round.kind]
+          : q
+            ? categoryLabel(q.cat, null)
+            : '💬 سؤال',
+        text: round ? round.text : (q?.text ?? id),
+        answers: roster.map((p) => ({
+          id: p.id,
+          name: p.name,
+          text: ans(p.id, i)?.text ?? null,
+        })),
+      })
+    }
+    let current = null
+    if (room.phase === 'question' || room.phase === 'intro') {
+      const id = room.questionIds[room.currentIndex]
+      const round = id ? roundFor(id) : null
+      const q = round ? null : id ? questionFor(id, null) : null
+      current = {
+        index: room.currentIndex,
+        category: round
+          ? ROUND_LABEL[round.kind]
+          : q
+            ? categoryLabel(q.cat, null)
+            : '💬 سؤال',
+        text: round ? round.text : (q?.text ?? id ?? ''),
+        options: q?.options ?? [],
+        answered: roster.filter((p) => ans(p.id, room.currentIndex)).map((p) => p.id),
+      }
+    }
+    return {
+      kind: 'chat' as const,
+      code: room.code,
+      mode: asMode(room.mode),
+      phase: room.phase,
+      index: room.currentIndex,
+      total,
+      players: pub,
+      history,
+      current,
+    }
+  })
+
 async function emptyToday() {
   const rows = await db.execute<{
     since: Date | null
