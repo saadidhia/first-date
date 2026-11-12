@@ -10,17 +10,17 @@ import { recordActivity } from './activity'
 import {
   type BoardPerson,
   type BoardState,
-  LAST,
-  MAX_TURNS,
   MIC_SECONDS,
   answerQuestion,
   answerersOf,
   applyRoll,
   boardQuestion,
   keyOf,
+  lastOf,
   rollerOf,
   tick,
   trackMic,
+  turnsOf,
   turnsUsed,
 } from './board'
 import { authorize } from './room-auth'
@@ -146,8 +146,8 @@ export const getBoardState = createServerFn({ method: 'POST' })
       phase: room.phase as 'waiting' | 'board' | 'done',
       serverNow: Date.now(),
       maxPlayers: room.mode === 'board_friends' ? 4 : 2,
-      maxTurns: MAX_TURNS,
-      last: LAST,
+      maxTurns: turnsOf(room.mode !== 'board_friends'),
+      last: lastOf(room.mode !== 'board_friends'),
       me: {
         id: me.id,
         name: me.name,

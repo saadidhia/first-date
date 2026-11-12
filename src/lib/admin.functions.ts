@@ -12,23 +12,18 @@ import {
 } from '../../db/schema'
 import { adminLogin, adminLogout, getAdminEmail } from './admin-session'
 import {
-  LAST,
-  MAX_TURNS,
   type BoardState,
-  SQUARES,
   arrivedAt,
   boardQuestion,
+  boardSquares,
+  lastOf,
   rollerOf,
   squareFor,
+  turnsOf,
   turnsUsed,
 } from './board'
 import { type AnswerLite, computeCompat } from './compat'
-import {
-  ROUND_LABEL,
-  categoryLabel,
-  questionFor,
-  roundFor,
-} from './questions'
+import { ROUND_LABEL, categoryLabel, questionFor, roundFor } from './questions'
 
 // A player counts as "using the site now" if their room polled within this window
 const ACTIVE_MS = 20_000
@@ -201,8 +196,8 @@ async function listGames(where: SQL | undefined, limit: number) {
         ? {
             friends: !board.team,
             turns: turnsUsed(board),
-            maxTurns: MAX_TURNS,
-            last: LAST,
+            maxTurns: turnsOf(board.team),
+            last: lastOf(board.team),
             step: board.step,
             pos: board.team
               ? [{ id: null, square: board.pos.team ?? 0, place: 0 }]
@@ -314,7 +309,9 @@ export const getAdminRoom = createServerFn({ method: 'GET' })
       const q = b.question
         ? boardQuestion(b.question.id, null, about(b.question.by))
         : null
-      const r = b.reveal ? boardQuestion(b.reveal.id, null, about(b.reveal.by)) : null
+      const r = b.reveal
+        ? boardQuestion(b.reveal.id, null, about(b.reveal.by))
+        : null
       return {
         kind: 'board' as const,
         code: room.code,
@@ -326,12 +323,12 @@ export const getAdminRoom = createServerFn({ method: 'GET' })
           order: b.order,
           turnOf: b.step === 'roll' ? rollerOf(b) : null,
           turns: turnsUsed(b),
-          maxTurns: MAX_TURNS,
-          last: LAST,
+          maxTurns: turnsOf(b.team),
+          last: lastOf(b.team),
           step: b.step,
           pos: b.pos,
           roll: b.roll,
-          squares: SQUARES.map((_, i) => squareFor(i, b.team)),
+          squares: boardSquares(b.team).map((_, i) => squareFor(i, b.team)),
           question:
             b.question && q
               ? {
@@ -410,7 +407,9 @@ export const getAdminRoom = createServerFn({ method: 'GET' })
             : '💬 سؤال',
         text: round ? round.text : (q?.text ?? id ?? ''),
         options: q?.options ?? [],
-        answered: roster.filter((p) => ans(p.id, room.currentIndex)).map((p) => p.id),
+        answered: roster
+          .filter((p) => ans(p.id, room.currentIndex))
+          .map((p) => p.id),
       }
     }
     return {

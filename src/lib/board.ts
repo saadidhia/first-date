@@ -1,8 +1,8 @@
-// ثنية العرس: the board game. A road of 48 squares from التعارف to العرس.
-// A couple (mode 'board') shares one pair of pawns and takes turns rolling; they have 20 rolls
-// to reach the wedding. Friends (mode 'board_friends', 2 to 4) race, one pawn each, and play on
-// until they all reach the throne: the first is ملك القعدة, the others take their places. Each
-// friend has 20 rolls; whoever is still on the road after that is ranked by how far they got.
+// ثنية العرس: the board game. A couple (mode 'board') shares one pair of pawns and takes turns
+// rolling on a long road of 64 squares from التعارف to العرس, with 26 rolls to reach the wedding.
+// Friends (mode 'board_friends', 2 to 4) race on a shorter road of 48 squares, one pawn each, and
+// play on until they all reach the throne: the first is ملك القعدة, the others take their places.
+// Each friend has 20 rolls; whoever is still on the road after that is ranked by how far they got.
 //
 // Squares: 💬 a question, ⚡ عراك (a hard question with bigger stakes), 👵 عمّتو (back 2), and
 // milestones along the way. A couple both answer and move on when they agree. With friends the
@@ -27,9 +27,22 @@ import {
 } from './bank/board-friends'
 import { personalize } from './questions'
 
-export const BOARD_SIZE = 48
-export const LAST = BOARD_SIZE - 1
+// The couple's road to the wedding is the longer one (more squares, more questions on the way);
+// friends race on a shorter one so a game of 4 doesn't drag.
+export const COUPLE_SIZE = 64
+export const COUPLE_LAST = COUPLE_SIZE - 1
+export const FRIENDS_SIZE = 48
+export const FRIENDS_LAST = FRIENDS_SIZE - 1
+/** Back-compat: "the board" is the couple's road. */
+export const BOARD_SIZE = COUPLE_SIZE
+export const LAST = COUPLE_LAST
+/** The last square of the road, by mode. */
+export const lastOf = (team: boolean) => (team ? COUPLE_LAST : FRIENDS_LAST)
+
+/** Rolls to reach the wedding (couple), and the per-friend roll cap (friends). */
+export const COUPLE_TURNS = 26
 export const MAX_TURNS = 20
+export const turnsOf = (team: boolean) => (team ? COUPLE_TURNS : MAX_TURNS)
 export const ROLL_SECONDS = 25
 export const ANSWER_SECONDS = 40
 /** After a question closes, everyone gets this long to read the answers before the next roll */
@@ -52,19 +65,20 @@ export type SquareKind =
   'start' | 'end' | 'milestone' | 'question' | 'fight' | 'aunt' | 'plain'
 export type Square = { kind: SquareKind; icon: string; name: string }
 
+// The couple's longer road (64 squares): more milestones, obstacles and questions on the way.
 const MILESTONES: Record<number, [string, string]> = {
-  8: ['☕', 'أوّل قهوة'],
-  16: ['👨‍👩‍👧', 'العايلة'],
-  24: ['💍', 'الخطوبة'],
-  32: ['📜', 'الملاك'],
-  40: ['🌿', 'الحنّة'],
+  10: ['☕', 'أوّل قهوة'],
+  22: ['👨‍👩‍👧', 'العايلة'],
+  34: ['💍', 'الخطوبة'],
+  46: ['📜', 'الملاك'],
+  56: ['🌿', 'الحنّة'],
 }
-const AUNT = new Set([13, 27, 37, 44])
-const FIGHT = new Set([19, 30, 42])
+const AUNT = new Set([7, 17, 29, 41, 51, 59])
+const FIGHT = new Set([13, 25, 39, 53])
 
-export const SQUARES: Square[] = Array.from({ length: BOARD_SIZE }, (_, i) => {
+export const SQUARES: Square[] = Array.from({ length: COUPLE_SIZE }, (_, i) => {
   if (i === 0) return { kind: 'start', icon: '👋', name: 'التعارف' }
-  if (i === LAST) return { kind: 'end', icon: '🎉', name: 'العرس' }
+  if (i === COUPLE_LAST) return { kind: 'end', icon: '🎉', name: 'العرس' }
   const m = MILESTONES[i]
   if (m) return { kind: 'milestone', icon: m[0], name: m[1] }
   if (AUNT.has(i)) return { kind: 'aunt', icon: '👵', name: 'عمّتو' }
@@ -72,6 +86,24 @@ export const SQUARES: Square[] = Array.from({ length: BOARD_SIZE }, (_, i) => {
   if (i % 2 === 1) return { kind: 'question', icon: '💬', name: 'سؤال' }
   return { kind: 'plain', icon: '', name: '' }
 })
+
+// The friends' shorter road (48 squares): the same layout the game had before.
+const F_MILESTONES = new Set([8, 16, 24, 32, 40])
+const F_AUNT = new Set([13, 27, 37, 44])
+const F_FIGHT = new Set([19, 30, 42])
+
+const FRIENDS_BASE: Square[] = Array.from({ length: FRIENDS_SIZE }, (_, i) => {
+  if (i === 0) return { kind: 'start', icon: '👋', name: 'التعارف' }
+  if (i === FRIENDS_LAST) return { kind: 'end', icon: '🎉', name: 'العرس' }
+  if (F_MILESTONES.has(i)) return { kind: 'milestone', icon: '•', name: '' }
+  if (F_AUNT.has(i)) return { kind: 'aunt', icon: '👵', name: 'عمّتو' }
+  if (F_FIGHT.has(i)) return { kind: 'fight', icon: '⚡', name: 'عراك' }
+  if (i % 2 === 1) return { kind: 'question', icon: '💬', name: 'سؤال' }
+  return { kind: 'plain', icon: '', name: '' }
+})
+
+/** The squares of the road, by mode — for drawing the board. */
+export const boardSquares = (team: boolean) => (team ? SQUARES : FRIENDS_BASE)
 
 /** A square as players see it: with friends, ⚡ عراك is a 🎤 dare instead. */
 // ملك القعدة (friends) is a day out with the gang, not the road to a wedding: its own stops,
@@ -83,14 +115,16 @@ const FRIENDS_STOPS: Record<number, [string, string]> = {
   24: ['🏖️', 'البحر'],
   32: ['🍕', 'الماكلة'],
   40: ['🎶', 'السهرية'],
-  [LAST]: ['👑', 'الكرسي'],
+  [FRIENDS_LAST]: ['👑', 'الكرسي'],
 }
 
 /** A square as players see it. With friends: ⚡ is a 🎤 dare, the stops are theirs, and there's no عمّتو. */
 export function squareFor(i: number, team: boolean): Square {
-  const sq = SQUARES[i]
-  if (team)
+  if (team) {
+    const sq = SQUARES[i]
     return sq.kind === 'aunt' ? { kind: 'aunt', icon: '🚧', name: 'عقبة' } : sq
+  }
+  const sq = FRIENDS_BASE[i]
   const stop = FRIENDS_STOPS[i]
   if (stop) return { ...sq, icon: stop[0], name: stop[1] }
   if (sq.kind === 'fight') return { kind: 'fight', icon: '🎤', name: 'تحدّي' }
@@ -110,10 +144,15 @@ const BANKS: Record<Tier, BoardRawQuestion[]> = {
   h: BOARD_HARD,
 }
 
-/** Easy at the start, harder towards the wedding; a fight is always hard. */
-export function tierAt(pos: number, kind: 'question' | 'fight'): Tier {
-  if (kind === 'fight' || pos >= 32) return 'h'
-  return pos >= 16 ? 'm' : 'e'
+/** Easy at the start, harder towards the end; a fight is always hard. Thresholds scale per road. */
+export function tierAt(
+  pos: number,
+  kind: 'question' | 'fight',
+  team = true,
+): Tier {
+  if (kind === 'fight') return 'h'
+  if (team) return pos >= 46 ? 'h' : pos >= 22 ? 'm' : 'e'
+  return pos >= 32 ? 'h' : pos >= 16 ? 'm' : 'e'
 }
 
 const FRIENDS_BANKS: Record<Tier, FriendsRawQuestion[]> = {
@@ -373,7 +412,7 @@ function finish(
       s,
       won
         ? `🎉 وصلتو للعرس في ${s.rolls} دورة!`
-        : `⏱ كملو الـ${MAX_TURNS} دورة وما وصلتوش للعرس 😅`,
+        : `⏱ كملو الـ${COUPLE_TURNS} دورة وما وصلتوش للعرس 😅`,
       won ? 'good' : 'bad',
     )
     return s
@@ -428,7 +467,7 @@ function arrive(
 function nextTurn(s: BoardState, now: number, people: People): BoardState {
   const n = s.order.length
   if (s.team) {
-    if (s.rolls >= MAX_TURNS) return finish(s, null, people)
+    if (s.rolls >= COUPLE_TURNS) return finish(s, null, people)
     s.turn = (s.turn + 1) % n
   } else {
     // The next friend still on the road; once nobody is, the game is over
@@ -491,7 +530,8 @@ export function applyRoll(
   const p = people.get(by)
   const k = keyOf(s, by)
   const from = s.pos[k] ?? 0
-  const to = Math.min(LAST, from + value)
+  const last = lastOf(s.team)
+  const to = Math.min(last, from + value)
   s.seq++
   s.rolls++
   if (!s.team) s.rolled = { ...s.rolled, [String(by)]: rolledOf(s, by) + 1 }
@@ -505,7 +545,7 @@ export function applyRoll(
       : `🎲 ${nameOf(people, by)} ${g(p, 'رمى', 'رمات')} ${value}`,
     'info',
   )
-  if (to === LAST)
+  if (to === last)
     return s.team ? finish(s, by, people) : arrive(s, by, now, people)
 
   const sq = squareFor(to, s.team)
@@ -516,7 +556,7 @@ export function applyRoll(
       ? pickBoardQuestion(tier, s.asked, rand)
       : pickFriendsQuestion(
           kind === 'dare' ? 'dare' : 'question',
-          tierAt(to, 'question'),
+          tierAt(to, 'question', false),
           s.asked,
           rand,
         )
@@ -583,7 +623,8 @@ function resolve(prev: BoardState, now: number, people: People): BoardState {
     matched = delta > 0
   }
   const from = s.pos[k] ?? 0
-  const to = Math.max(0, Math.min(LAST, from + delta))
+  const last = lastOf(s.team)
+  const to = Math.max(0, Math.min(last, from + delta))
   s.seq++
   s.pos[k] = to
   s.question = null
@@ -625,7 +666,7 @@ function resolve(prev: BoardState, now: number, people: People): BoardState {
   }
   log(s, text, delta > 0 ? 'good' : delta < 0 ? 'bad' : 'info')
   const next =
-    to === LAST
+    to === last
       ? s.team
         ? finish(s, q.by, people)
         : arrive(s, q.by, now, people)
