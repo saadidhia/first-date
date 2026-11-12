@@ -15,7 +15,7 @@ import { RoomMusic } from '@/components/room-music'
 import { SfxButton } from '@/components/sfx-toggle'
 import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
-import { EFFECT, SQUARES, squareFor, stepsWord } from '@/lib/board'
+import { EFFECT, boardSquares, squareFor, stepsWord } from '@/lib/board'
 import { answerBoard, getBoardState, rollDice } from '@/lib/board.functions'
 import { startRoom } from '@/lib/room.functions'
 import type { ShareCardInput } from '@/lib/share-card'
@@ -43,7 +43,7 @@ const PAWN_COLORS = [
 const g = (gender: string | null | undefined, m: string, f: string) =>
   gender === 'female' ? f : m
 
-/** Centre of square i on an 8×6 board that snakes up from the bottom right (Arabic reads right to left). */
+/** Centre of square i on a board 8 wide that snakes up from the bottom right (Arabic reads right to left). */
 function cell(i: number) {
   const row = Math.floor(i / 8)
   const c = i % 8
@@ -514,7 +514,13 @@ function BoardView({
   // How many questions were played on each square (from this browser's history)
   const counts = new Map<number, number>()
   for (const e of played) counts.set(e.square, (counts.get(e.square) ?? 0) + 1)
-  const road = SQUARES.map((_, i) => cell(i))
+  const squares = boardSquares(b.team)
+  // The road can be taller than friends' (the couple's is longer): fit the viewBox to its rows
+  const rows = Math.ceil(squares.length / 8)
+  const topY = 550 - (rows - 1) * 100
+  const viewBox = `0 ${topY - 60} 800 ${660 - topY}`
+  const road = squares
+    .map((_, i) => cell(i))
     .map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`)
     .join(' ')
   const offsets = [
@@ -526,7 +532,7 @@ function BoardView({
   return (
     <div className="surface overflow-hidden rounded-3xl p-2">
       <svg
-        viewBox="0 -60 800 660"
+        viewBox={viewBox}
         className="block h-auto w-full"
         role="img"
         aria-label="اللوحة"
@@ -540,7 +546,7 @@ function BoardView({
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        {SQUARES.map((_, i) => {
+        {squares.map((_, i) => {
           const sq = squareFor(i, b.team)
           const p = cell(i)
           return (

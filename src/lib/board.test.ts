@@ -14,7 +14,9 @@ import {
   MIC_SECONDS,
   REVEAL_SECONDS,
   type BoardState,
+  COUPLE_TURNS,
   EFFECT,
+  FRIENDS_LAST,
   LAST,
   MAX_TURNS,
   ROLL_SECONDS,
@@ -53,12 +55,12 @@ const at = (s: BoardState, pos: number, key = 'team'): BoardState => ({
 
 describe('the board', () => {
   it('runs from التعارف to العرس with questions, fights, the aunt and milestones', () => {
-    expect(SQUARES).toHaveLength(48)
+    expect(SQUARES).toHaveLength(64)
     expect(SQUARES[0].kind).toBe('start')
     expect(SQUARES[LAST].kind).toBe('end')
-    expect(SQUARES[13].kind).toBe('aunt')
-    expect(SQUARES[19].kind).toBe('fight')
-    expect(SQUARES[24].name).toBe('الخطوبة')
+    expect(SQUARES[7].kind).toBe('aunt')
+    expect(SQUARES[13].kind).toBe('fight')
+    expect(SQUARES[34].name).toBe('الخطوبة')
     expect(SQUARES.filter((s) => s.kind === 'question').length).toBeGreaterThan(
       15,
     )
@@ -90,9 +92,9 @@ describe('the board', () => {
 
   it('gets harder towards the wedding, and a fight is always hard', () => {
     expect(tierAt(3, 'question')).toBe('e')
-    expect(tierAt(20, 'question')).toBe('m')
-    expect(tierAt(35, 'question')).toBe('h')
-    expect(tierAt(19, 'fight')).toBe('h')
+    expect(tierAt(30, 'question')).toBe('m')
+    expect(tierAt(50, 'question')).toBe('h')
+    expect(tierAt(10, 'fight')).toBe('h')
   })
 
   it("picks questions the room hasn't had yet", () => {
@@ -133,25 +135,25 @@ describe('a couple', () => {
   })
 
   it('a fight costs more when you disagree', () => {
-    let s = applyRoll(at(start(), 15), 4, T0, people, rand)
+    let s = applyRoll(at(start(), 9), 4, T0, people, rand)
     expect(s.question?.kind).toBe('fight')
     expect(s.question?.id).toMatch(/^board_h_/)
     s = answerQuestion(s, 1, 2, T0, people)
     s = answerQuestion(s, 2, 0, T0, people)
-    expect(s.pos.team).toBe(19 + EFFECT.fightDiff)
+    expect(s.pos.team).toBe(13 + EFFECT.fightDiff)
   })
 
   it('a 🚧 obstacle sends the couple back by how bad it is, a different one each time', () => {
-    const s = applyRoll(at(start(), 10), 3, T0, people, rand)
-    expect(s.roll?.to).toBe(13)
-    expect(squareFor(13, true).name).toBe('عقبة')
+    const s = applyRoll(at(start(), 14), 3, T0, people, rand)
+    expect(s.roll?.to).toBe(17)
+    expect(squareFor(17, true).name).toBe('عقبة')
     // rand 0 picks the first obstacle: back 4
     expect(s.obstacle).toEqual({
       seq: s.roll!.seq,
       text: OBSTACLES[0][0],
       move: OBSTACLES[0][1],
     })
-    expect(s.pos.team).toBe(13 + OBSTACLES[0][1])
+    expect(s.pos.team).toBe(17 + OBSTACLES[0][1])
     expect(s.log[0].text).toContain('ارجعو 4 خطوات')
     // Some have one of their names in them
     const worst = obstacleAt(8, ['سارة', 'أحمد'], () => 0)
@@ -165,20 +167,20 @@ describe('a couple', () => {
   })
 
   it('wins on reaching the wedding, even past it', () => {
-    const s = applyRoll(at(start(), 44), 6, T0, people, rand)
+    const s = applyRoll(at(start(), 58), 6, T0, people, rand)
     expect(s.pos.team).toBe(LAST)
     expect(s.step).toBe('done')
     expect(s.result).toMatchObject({ won: true, turns: 1 })
   })
 
-  it(`loses after ${MAX_TURNS} rolls without reaching it`, () => {
+  it(`loses after ${COUPLE_TURNS} rolls without reaching it`, () => {
     let s = start()
-    for (let i = 0; i < MAX_TURNS; i++) {
+    for (let i = 0; i < COUPLE_TURNS; i++) {
       s = at(s, 0)
       s = applyRoll(s, 2, T0, people, rand)
     }
     expect(s.step).toBe('done')
-    expect(s.result).toMatchObject({ won: false, turns: MAX_TURNS })
+    expect(s.result).toMatchObject({ won: false, turns: COUPLE_TURNS })
   })
 
   it('rolls by itself, and closes a question, when time runs out', () => {
@@ -306,14 +308,14 @@ describe('friends racing', () => {
   })
 
   it('is ملك القعدة: friends stops, a throne at the end, and no square that sends you back', () => {
-    for (let i = 0; i <= LAST; i++)
+    for (let i = 0; i <= FRIENDS_LAST; i++)
       expect(squareFor(i, false).kind).not.toBe('aunt')
     expect(squareFor(8, false).name).toBe('القهوة')
-    expect(squareFor(LAST, false).name).toBe('الكرسي')
+    expect(squareFor(FRIENDS_LAST, false).name).toBe('الكرسي')
     expect(squareFor(19, false).icon).toBe('🎤')
-    // The couple's road is unchanged
-    expect(squareFor(13, true).kind).toBe('aunt')
-    expect(squareFor(24, true).name).toBe('الخطوبة')
+    // The couple's road has its obstacle and milestone squares
+    expect(squareFor(7, true).kind).toBe('aunt')
+    expect(squareFor(34, true).name).toBe('الخطوبة')
 
     // 10 + 3 lands on 13: عمّتو for a couple, a question for friends
     const s = applyRoll(at(start(), 10, '1'), 3, T0, people, rand)
