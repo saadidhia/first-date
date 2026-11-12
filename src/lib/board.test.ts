@@ -23,7 +23,7 @@ import {
   applyRoll,
   boardQuestion,
   initBoard,
-  obstacleText,
+  obstacleAt,
   pickBoardQuestion,
   squareFor,
   tick,
@@ -141,22 +141,27 @@ describe('a couple', () => {
     expect(s.pos.team).toBe(19 + EFFECT.fightDiff)
   })
 
-  it('a 🚧 obstacle sends the couple back 2, a different one each time', () => {
+  it('a 🚧 obstacle sends the couple back by how bad it is, a different one each time', () => {
     const s = applyRoll(at(start(), 10), 3, T0, people, rand)
     expect(s.roll?.to).toBe(13)
-    expect(s.pos.team).toBe(13 + EFFECT.aunt)
     expect(squareFor(13, true).name).toBe('عقبة')
-    // rand 0 picks the first obstacle, about the first of the two
+    // rand 0 picks the first obstacle: back 4
     expect(s.obstacle).toEqual({
       seq: s.roll!.seq,
-      text: '👴 بو سارة موش موافق!',
+      text: OBSTACLES[0][0],
+      move: OBSTACLES[0][1],
     })
-    expect(s.log[0].text).toContain('بو سارة موش موافق')
-    const texts = new Set(
-      OBSTACLES.map((_, i) => obstacleText(i, ['سارة', 'أحمد'], () => 0.9)),
-    )
-    expect(texts.size).toBe(OBSTACLES.length)
-    for (const t of texts) expect(t).not.toMatch(/[{}]/)
+    expect(s.pos.team).toBe(13 + OBSTACLES[0][1])
+    expect(s.log[0].text).toContain('ارجعو 4 خطوات')
+    // Some have one of their names in them
+    const worst = obstacleAt(8, ['سارة', 'أحمد'], () => 0)
+    expect(worst).toEqual({ text: '👴 بو سارة موش موافق!', move: -2 })
+    const moves = new Set(OBSTACLES.map(([, m]) => m))
+    expect([...moves].sort()).toEqual([-2, -3, -4])
+    for (let i = 0; i < OBSTACLES.length; i++)
+      expect(obstacleAt(i, ['سارة', 'أحمد'], () => 0.9).text).not.toMatch(
+        /[{}]/,
+      )
   })
 
   it('wins on reaching the wedding, even past it', () => {

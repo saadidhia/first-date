@@ -15,7 +15,7 @@ import { RoomMusic } from '@/components/room-music'
 import { SfxButton } from '@/components/sfx-toggle'
 import { VoiceBar } from '@/components/voice-bar'
 import { Button } from '@/components/ui/button'
-import { EFFECT, SQUARES, squareFor } from '@/lib/board'
+import { EFFECT, SQUARES, squareFor, stepsWord } from '@/lib/board'
 import { answerBoard, getBoardState, rollDice } from '@/lib/board.functions'
 import { startRoom } from '@/lib/room.functions'
 import type { ShareCardInput } from '@/lib/share-card'
@@ -447,10 +447,10 @@ export function BoardRoom({ code, token }: { code: string; token: string }) {
             <div className="pop-in w-full max-w-md rounded-3xl border border-destructive/50 bg-card p-5 text-center shadow-2xl">
               <p className="text-xs font-semibold text-destructive">🚧 عقبة!</p>
               <p className="mt-1 font-display text-xl font-bold">
-                {b.obstacle}
+                {b.obstacle.text}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                ارجعو زوز خطوات 😅
+                ارجعو {stepsWord(-b.obstacle.move)} 😅
               </p>
             </div>
           </div>
@@ -944,7 +944,7 @@ function Legend({ team }: { team: boolean }) {
           '⚡',
           `عراك: نفس الجواب +${EFFECT.fightSame}، مختلف ${EFFECT.fightDiff}`,
         ],
-        ['🚧', `عقبة: ${EFFECT.aunt}`],
+        ['🚧', 'عقبة: من −2 لـ −4'],
         ['🎉', 'العرس: الآخر'],
       ]
     : [

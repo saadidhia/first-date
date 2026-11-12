@@ -278,7 +278,7 @@ export type BoardState = {
   log: BoardEvent[]
   asked: string[]
   /** The last 🚧 obstacle a couple hit (on the roll with this seq), shown as it happens */
-  obstacle?: { seq: number; text: string } | null
+  obstacle?: { seq: number; text: string; move: number } | null
   /** Nobody can roll before this (ms since epoch): time to read the answers of the last question */
   holdUntil?: number
   /** Friends: who reached 👑 الكرسي, in order of arrival (the game goes on until they all do) */
@@ -314,6 +314,10 @@ export const turnsUsed = (s: BoardState) =>
 const g = (p: BoardPerson | undefined, m: string, f: string) =>
   p?.gender === 'female' ? f : m
 const nameOf = (people: People, id: number) => people.get(id)?.name ?? '؟'
+
+/** خطوة, زوز خطوات, 3 خطوات */
+export const stepsWord = (n: number) =>
+  n === 1 ? 'خطوة' : n === 2 ? 'زوز خطوات' : `${n} خطوات`
 
 /** "to" a place: للقهوة, للخطوبة (ل + ال joins as لل) */
 const to_ = (place: string) =>
@@ -445,26 +449,29 @@ function nextTurn(s: BoardState, now: number, people: People): BoardState {
 }
 
 /**
- * The obstacles on a couple's 🚧 squares, one picked at random each time. `{x}` is the name of
- * one of the two, picked at random, so the families get involved (بو سارة موش موافق).
+ * The obstacles on a couple's 🚧 squares, one picked at random each time, each with how far it
+ * sends them back (set by the owner: from −2 to −4). `{x}` is the name of one of
+ * the two, picked at random, so the families get involved (بو سارة موش موافق).
  */
-export const OBSTACLES = [
-  '👴 بو {x} موش موافق!',
-  '🧱 بو {x} حطّ العصا في العجلة',
-  '⚡ عركة كبيرة على حاجة تافهة',
-  '💸 ما فمّاش فلوس للعرس',
-  '👵 عمّتو جات',
-  '👵 عمّتو تحب تاخذلو بنتها',
-  '👵 خالتو تحب تاخذو لبنتها',
-  '🏠 ما لقيتوش دار',
-  '📱 غيرة على ميساج',
-  '👵 أمّ {x} عندها شروط',
-  '📅 تأجّل العرس، الصالة محجوزة',
+export const OBSTACLES: [text: string, move: number][] = [
+  ['⚡ عركة كبيرة على حاجة تافهة', -4],
+  ['👵 عمّتو جات', -4],
+  ['📱 غيرة على ميساج', -4],
+  ['🧱 بو {x} حطّ العصا في العجلة', -3],
+  ['👵 عمّتو تحب تاخذلو بنتها', -3],
+  ['👵 خالتو تحب تاخذو لبنتها', -3],
+  ['🏠 ما لقيتوش دار', -3],
+  ['👵 أمّ {x} عندها شروط', -3],
+  ['👴 بو {x} موش موافق!', -2],
+  ['💸 ما فمّاش فلوس للعرس', -2],
+  ['📅 تأجّل العرس، الصالة محجوزة', -2],
 ]
 
-export function obstacleText(i: number, names: string[], rand: () => number) {
+/** Obstacle i, worded with one of the couple's names, and how far it sends them back. */
+export function obstacleAt(i: number, names: string[], rand: () => number) {
   const name = names[Math.floor(rand() * names.length)] ?? ''
-  return OBSTACLES[i % OBSTACLES.length].replaceAll('{x}', name)
+  const [text, move] = OBSTACLES[i % OBSTACLES.length]
+  return { text: text.replaceAll('{x}', name), move }
 }
 
 /** The player whose turn it is rolled `value` (1-6). */
@@ -521,14 +528,14 @@ export function applyRoll(
   }
   if (sq.kind === 'aunt') {
     // A couple's 🚧: a different obstacle each time, about one of them (their names) or both
-    s.pos[k] = Math.max(0, to + EFFECT.aunt)
-    const text = obstacleText(
+    const { text, move } = obstacleAt(
       Math.floor(rand() * OBSTACLES.length),
       s.order.map((id) => nameOf(people, id)),
       rand,
     )
-    s.obstacle = { seq: s.seq, text }
-    log(s, `${text}: ارجعو زوز خطوات 😅`, 'bad')
+    s.pos[k] = Math.max(0, to + move)
+    s.obstacle = { seq: s.seq, text, move }
+    log(s, `${text}: ارجعو ${stepsWord(-move)} 😅`, 'bad')
   } else if (sq.kind === 'milestone') {
     log(
       s,
