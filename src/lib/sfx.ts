@@ -18,6 +18,8 @@ export type Sfx =
   | 'spin'
   | 'reaction'
   | 'done'
+  | 'dice'
+  | 'hop'
 
 const KEY = 'firstdate:sfx:on'
 const VOLUME = 0.22
@@ -157,6 +159,17 @@ export function playSfx(name: Sfx) {
         tone(a, 1400, at, 0.03, { type: 'square', gain: 0.08 })
       }
       tone(a, 1047, WHEEL_SECONDS + 0.1, 0.5, { type: 'triangle', gain: 0.4 })
+      break
+    case 'dice':
+      // A rattle that slows down, like a dice tumbling on a board
+      for (let k = 0; k < 9; k++)
+        tone(a, 900 + (k % 3) * 220, 0.75 * (1 - Math.pow(1 - k / 9, 2)), 0.035, {
+          type: 'square',
+          gain: 0.1,
+        })
+      break
+    case 'hop':
+      tone(a, 600, 0, 0.07, { gain: 0.25, slideTo: 760 })
       break
     case 'reaction':
       tone(a, 420, 0, 0.1, { gain: 0.4, slideTo: 900 })

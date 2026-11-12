@@ -10,12 +10,14 @@ import {
   index,
 } from 'drizzle-orm/pg-core'
 
+import type { BoardState } from '../src/lib/board'
+
 // A date room. `phase` drives the game: waiting -> question -> reveal -> ... -> done.
 // A spin question goes spin (host turns the wheel) -> spinning -> question -> reveal.
 export const rooms = pgTable('rooms', {
   id: serial().primaryKey(),
   code: text().notNull().unique(),
-  mode: text().notNull().default('date'), // 'date' | 'friends'
+  mode: text().notNull().default('date'), // 'date' | 'friends' | 'board' | 'board_friends'
   phase: text().notNull().default('waiting'),
   currentIndex: integer('current_index').notNull().default(0),
   phaseEndsAt: timestamp('phase_ends_at', { withTimezone: true }),
@@ -26,6 +28,8 @@ export const rooms = pgTable('rooms', {
   joker: jsonb().$type<{ index: number; skipped: string }>(),
   // When the game finished: the voice chat stays open for a few minutes after it
   endedAt: timestamp('ended_at', { withTimezone: true }),
+  // ثنية العرس rooms: the whole board game (pawns, turn, open question, log), see src/lib/board.ts
+  board: jsonb().$type<BoardState>(),
   // Where the host came from when the room was created (instagram, google, direct…), for the funnel
   source: text(),
   createdAt: timestamp('created_at', { withTimezone: true })

@@ -4,9 +4,13 @@ import { Mic, MicOff } from 'lucide-react'
 import { type AdminGame, getAdminVoice } from '@/lib/admin.functions'
 import { cn } from '@/lib/utils'
 
-// Couples (First Date) are linked in pink, friends (صحاب) in blue
+// Couples (First Date) are linked in pink, friends (صحاب) in blue, board games in gold
 const LINE = { date: 'bg-pink-400', friends: 'bg-sidi-blue' }
 const MODE_EMOJI = { date: '💘', friends: '🤝' }
+const lineOf = (g: AdminGame) => (g.board ? 'bg-gold' : LINE[g.mode])
+/** 🎲 ثنية العرس (a couple's board game), 👑 ملك القعدة (friends), else the chat game's emoji */
+const emojiOf = (g: AdminGame) => (g.board ? (g.board.friends ? '👑' : '🎲') : MODE_EMOJI[g.mode])
+const MEDALS = ['👑', '🥈', '🥉', '🏅']
 
 const PHASE_LABEL: Record<string, string> = {
   waiting: 'يستنّاو',
@@ -16,6 +20,7 @@ const PHASE_LABEL: Record<string, string> = {
   question: 'يجاوبو',
   reveal: 'يجاوبو',
   done: 'كمّلو',
+  board: 'يلعبو',
 }
 
 export function timeAgo(iso: string) {
@@ -52,12 +57,15 @@ export function useAdminVoice(): VoiceMap {
 
 export function PairLegend() {
   return (
-    <div className="flex gap-4 text-xs text-muted-foreground">
+    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
       <span className="flex items-center gap-1.5">
         <span className={cn('h-0.5 w-5 rounded-full', LINE.date)} /> كوبل (First Date)
       </span>
       <span className="flex items-center gap-1.5">
         <span className={cn('h-0.5 w-5 rounded-full', LINE.friends)} /> صحاب
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-0.5 w-5 rounded-full bg-gold" /> 🎲 ثنية العرس · 👑 ملك القعدة
       </span>
     </div>
   )
@@ -76,11 +84,11 @@ export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
         <div className="flex flex-wrap items-center gap-y-2">
           {game.players.map((p, i) => (
             <div key={p.id} className="flex min-w-0 items-center">
-              {i > 0 && <span className={cn('h-0.5 w-5 shrink-0 rounded-full', LINE[game.mode])} aria-hidden />}
+              {i > 0 && <span className={cn('h-0.5 w-5 shrink-0 rounded-full', lineOf(game))} aria-hidden />}
               <PlayerChip player={p} mode={game.mode} mic={voice.get(p.id)} className="max-w-36" />
             </div>
           ))}
-          <span className="ms-2 text-xs text-muted-foreground">{MODE_EMOJI[game.mode]} {game.players.length}</span>
+          <span className="ms-2 text-xs text-muted-foreground">{emojiOf(game)} {game.players.length}</span>
         </div>
       ) : (
         <div className="flex items-center gap-2">
@@ -89,11 +97,11 @@ export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
             <span
               className={cn(
                 'w-full rounded-full',
-                guests[0] ? cn('h-0.5', LINE[game.mode]) : 'h-0 border-t-2 border-dashed border-muted-foreground/40',
+                guests[0] ? cn('h-0.5', lineOf(game)) : 'h-0 border-t-2 border-dashed border-muted-foreground/40',
               )}
             />
             <span className="absolute inset-x-0 mx-auto w-fit rounded-full bg-card px-1 text-xs">
-              {MODE_EMOJI[game.mode]}
+              {emojiOf(game)}
             </span>
           </div>
           {guests[0] ? (
@@ -105,10 +113,31 @@ export function GameRow({ game, voice }: { game: AdminGame; voice: VoiceMap }) {
       )}
       {game.match && <MatchLine match={game.match} mode={game.mode} group={guests.length > 1} />}
       <p className="mt-1.5 text-xs text-muted-foreground">
-        لعبة <span dir="ltr" className="font-mono">{game.code}</span> · {PHASE_LABEL[game.phase] ?? game.phase}
-        {guests.length > 0 && game.phase !== 'waiting' && ` · سؤال ${progress}/${game.questions}`} · بدات {timeAgo(game.createdAt)}
+        {game.board ? (game.board.friends ? 'ملك القعدة' : 'ثنية العرس') : 'لعبة'}{' '}
+        <span dir="ltr" className="font-mono">{game.code}</span> · {PHASE_LABEL[game.phase] ?? game.phase}
+        {game.board
+          ? game.phase !== 'waiting' && ` · الدورة ${game.board.turns}/${game.board.maxTurns}`
+          : guests.length > 0 && game.phase !== 'waiting' && ` · سؤال ${progress}/${game.questions}`}{' '}
+        · بدات {timeAgo(game.createdAt)}
       </p>
+      {game.board && game.phase !== 'waiting' && <BoardLine game={game} />}
     </li>
+  )
+}
+
+/** Where everyone stands on the board: the couple's square, or each friend's (a medal once they reached the throne). */
+function BoardLine({ game }: { game: AdminGame }) {
+  const b = game.board!
+  const names = new Map(game.players.map((p) => [p.id, p.name]))
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
+      {b.pos.map((p, i) => (
+        <span key={p.id ?? i} className="rounded-full bg-gold/10 px-2 py-0.5 text-gold">
+          {b.friends ? `${p.place ? MEDALS[p.place - 1] ?? '🏅' : '🎲'} ${names.get(p.id ?? -1) ?? '؟'}: ` : '🎲 '}
+          {p.place ? 'وصل' : `المربّع ${p.square}/${b.last}`}
+        </span>
+      ))}
+    </div>
   )
 }
 
