@@ -118,7 +118,8 @@ function EmptyTodayCard({ today }: { today: Stats['today'] | undefined }) {
 }
 
 type Range = 7 | 30 | 90
-type ModeFilter = 'all' | 'date' | 'friends'
+type Series = 'date' | 'friends' | 'board' | 'king'
+type ModeFilter = 'all' | Series
 type Metric = 'players' | 'rooms'
 
 const RANGES: { value: Range; label: string }[] = [
@@ -126,11 +127,24 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 30, label: '30 يوم' },
   { value: 90, label: '3 شهور' },
 ]
+// Every game type, in the order the bars stack (bottom first) and with its colour
+const SERIES: { key: Series; label: string; bar: string; text: string }[] = [
+  { key: 'date', label: '💘 First Date', bar: 'bg-primary', text: 'text-primary' },
+  { key: 'friends', label: '🤝 صحاب', bar: 'bg-sidi-blue', text: 'text-sidi-blue' },
+  { key: 'board', label: '🎲 ثنية العرس', bar: 'bg-gold', text: 'text-gold' },
+  { key: 'king', label: '👑 ملك القعدة', bar: 'bg-emerald-400', text: 'text-emerald-400' },
+]
 const MODES: { value: ModeFilter; label: string }[] = [
   { value: 'all', label: 'الكل' },
-  { value: 'date', label: '💘 First Date' },
-  { value: 'friends', label: '🤝 صحاب' },
+  ...SERIES.map((x) => ({ value: x.key, label: x.label })),
 ]
+
+/** One day's count for a game type, of players or of games. */
+function countOf(d: Stats['days'][number], key: Series, metric: Metric) {
+  const players = { date: d.datePlayers, friends: d.friendsPlayers, board: d.boardPlayers, king: d.kingPlayers }
+  const rooms = { date: d.dateRooms, friends: d.friendsRooms, board: d.boardRooms, king: d.kingRooms }
+  return (metric === 'players' ? players : rooms)[key]
+}
 const METRICS: { value: Metric; label: string }[] = [
   { value: 'players', label: 'لاعبين' },
   { value: 'rooms', label: 'لعبات' },
@@ -179,7 +193,7 @@ function DailySection({ days }: { days: Stats['days'] }) {
   )
 }
 
-/** Bars per day: stacked First Date (red) + صحاب (blue), or just the chosen type. */
+/** Bars per day: every game type stacked in its colour, or just the chosen type. */
 function DailyChart({
   days,
   range,
@@ -199,13 +213,12 @@ function DailyChart({
     const byDay = new Map(days.map((d) => [d.day, d]))
     return lastDays(range).map((day) => {
       const d = byDay.get(day)
-      const date = d ? (metric === 'players' ? d.datePlayers : d.dateRooms) : 0
-      const friends = d ? (metric === 'players' ? d.friendsPlayers : d.friendsRooms) : 0
-      return { day, date: mode === 'friends' ? 0 : date, friends: mode === 'date' ? 0 : friends }
+      const parts = SERIES.map((x) => (d && (mode === 'all' || mode === x.key) ? countOf(d, x.key, metric) : 0))
+      return { day, parts, total: parts.reduce((a, b) => a + b, 0) }
     })
   }, [days, range, mode, metric])
 
-  const totals = bars.map((b) => b.date + b.friends)
+  const totals = bars.map((b) => b.total)
   const max = Math.max(1, ...totals)
   const sum = totals.reduce((a, b) => a + b, 0)
   const shown = hover == null ? null : bars[hover]
@@ -217,12 +230,12 @@ function DailyChart({
           <p className="text-sm">
             <span className="text-muted-foreground">{dayLabel(shown.day)} · </span>
             <span className="font-semibold tabular-nums">
-              {fmt(shown.date + shown.friends)} {unit}
+              {fmt(shown.total)} {unit}
             </span>
             {mode === 'all' && (
               <span className="text-xs text-muted-foreground">
                 {' '}
-                ({fmt(shown.date)} First Date · {fmt(shown.friends)} صحاب)
+                ({SERIES.map((x, k) => `${fmt(shown.parts[k])} ${x.label}`).join(' · ')})
               </span>
             )}
           </p>
@@ -235,13 +248,12 @@ function DailyChart({
           </p>
         )}
         {mode === 'all' && (
-          <div className="flex gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-primary" /> First Date
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-sidi-blue" /> صحاب
-            </span>
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            {SERIES.map((x) => (
+              <span key={x.key} className="flex items-center gap-1.5">
+                <span className={cn('size-2.5 rounded-full', x.bar)} /> {x.label}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -256,7 +268,11 @@ function DailyChart({
           aria-label={`${fmt(sum)} ${unit} في آخر ${range} يوم`}
         >
           {bars.map((b, i) => {
-            const total = b.date + b.friends
+            const total = b.total
+            // Top of the stack first, so the column grows up from First Date at the bottom
+            const stack = SERIES.map((x, k) => ({ ...x, n: b.parts[k] }))
+              .filter((x) => x.n > 0)
+              .reverse()
             return (
               <button
                 key={b.day}
@@ -271,18 +287,13 @@ function DailyChart({
                   hover != null && hover !== i && 'opacity-50',
                 )}
               >
-                {b.friends > 0 && (
+                {stack.map((x, k) => (
                   <span
-                    className={cn('w-full rounded-t-[4px] bg-sidi-blue', b.date > 0 && 'mb-[2px]')}
-                    style={{ height: `${(b.friends / max) * 100}%` }}
+                    key={x.key}
+                    className={cn('w-full', x.bar, k === 0 && 'rounded-t-[4px]', k < stack.length - 1 && 'mb-[2px]')}
+                    style={{ height: `${(x.n / max) * 100}%` }}
                   />
-                )}
-                {b.date > 0 && (
-                  <span
-                    className={cn('w-full bg-primary', b.friends === 0 && 'rounded-t-[4px]')}
-                    style={{ height: `${(b.date / max) * 100}%` }}
-                  />
-                )}
+                ))}
               </button>
             )
           })}
@@ -315,8 +326,11 @@ function DailyTable({ days, range }: { days: Stats['days']; range: number }) {
                 <th className="py-2 text-start font-normal">النهار</th>
                 <th className="py-2 text-start font-normal">لاعبين</th>
                 <th className="py-2 text-start font-normal">لعبات</th>
-                <th className="py-2 text-start font-normal">💘 First Date</th>
-                <th className="py-2 text-start font-normal">🤝 صحاب</th>
+                {SERIES.map((x) => (
+                  <th key={x.key} className="py-2 text-start font-normal">
+                    {x.label}
+                  </th>
+                ))}
                 <th className="py-2 text-start font-normal">وقت فيه ناس</th>
               </tr>
             </thead>
@@ -328,8 +342,11 @@ function DailyTable({ days, range }: { days: Stats['days']; range: number }) {
                   </td>
                   <td className="py-2 font-semibold">{fmt(d.players)}</td>
                   <td className="py-2">{fmt(d.rooms)}</td>
-                  <td className="py-2 text-primary">{fmt(d.dateRooms)}</td>
-                  <td className="py-2 text-sidi-blue">{fmt(d.friendsRooms)}</td>
+                  {SERIES.map((x) => (
+                    <td key={x.key} className={cn('py-2', x.text)}>
+                      {fmt(countOf(d, x.key, 'rooms'))}
+                    </td>
+                  ))}
                   <td className="py-2 text-muted-foreground">{duration(d.activeMinutes)}</td>
                 </tr>
               ))}
@@ -341,15 +358,17 @@ function DailyTable({ days, range }: { days: Stats['days']; range: number }) {
   )
 }
 
-/** How many games were played as First Date (couples) and as صحاب (friends). */
+/** How many games were played of each type: First Date, صحاب, ثنية العرس and ملك القعدة. */
 function GamesByMode({ games }: { games: Stats['games'] }) {
   const fmt = (n: number) => n.toLocaleString('ar-TN')
-  const all = games.date.total + games.friends.total
-  const share = (n: number) => (all === 0 ? 0 : Math.round((n / all) * 100))
   const modes = [
     { key: 'date', label: '💘 First Date (كوبل)', bar: 'bg-primary', ...games.date },
     { key: 'friends', label: '🤝 صحاب', bar: 'bg-sidi-blue', ...games.friends },
+    { key: 'board', label: '🎲 ثنية العرس (كوبل)', bar: 'bg-gold', ...games.board },
+    { key: 'board_friends', label: '👑 ملك القعدة (صحاب)', bar: 'bg-emerald-400', ...games.board_friends },
   ]
+  const all = modes.reduce((n, m) => n + m.total, 0)
+  const share = (n: number) => (all === 0 ? 0 : Math.round((n / all) * 100))
   return (
     <section className="mt-8 rounded-3xl border border-border bg-card/85 p-5">
       <div className="flex items-center gap-2">
