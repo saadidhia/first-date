@@ -3,7 +3,6 @@ import { Link } from '@tanstack/react-router'
 import {
   BarChart3,
   Filter,
-  ListOrdered,
   LogOut,
   MessageCircleHeart,
   Users,
@@ -38,16 +37,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     body = (
       <>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <nav className="flex flex-wrap gap-1 rounded-2xl border border-border bg-card/60 p-1">
+          <nav className="flex gap-1 rounded-2xl border border-border bg-card/60 p-1">
             <Tab
               to="/admin"
               icon={<BarChart3 className="size-4" />}
               label="الإحصائيات"
-            />
-            <Tab
-              to="/admin/games"
-              icon={<ListOrdered className="size-4" />}
-              label="آخر الألعاب"
             />
             <Tab
               to="/admin/players"
@@ -95,12 +89,7 @@ function Tab({
   icon,
   label,
 }: {
-  to:
-    | '/admin'
-    | '/admin/games'
-    | '/admin/players'
-    | '/admin/funnel'
-    | '/admin/messages'
+  to: '/admin' | '/admin/players' | '/admin/funnel' | '/admin/messages'
   icon: React.ReactNode
   label: string
 }) {
